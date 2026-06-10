@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 static std::vector<uint8_t> rd(const std::string& p) {
@@ -45,7 +46,43 @@ int main(int argc, char** argv) {
                        i < got.size() ? got[i] : 0u, i < ref.size() ? ref[i] : 0u);
         }
     }
+    // --- error handling: loads must THROW (never exit/crash) on bad inputs ---
+    {
+        bool threw = false;
+        try { auto bad = quicktok::Tokenizer::load_dir("/nonexistent-quicktok-dir"); }
+        catch (const std::exception& e) { threw = true; }
+        if (!threw) { fails++; printf("  FAIL: load_dir(nonexistent) did not throw\n"); }
+
+        // truncated vocab file
+        FILE* f = fopen("/tmp/qt_trunc.vocab", "wb");
+        uint32_t n = 100256; fwrite(&n, 4, 1, f); fclose(f);   // header only, no records
+        threw = false;
+        try { auto bad = quicktok::Tokenizer::load("/tmp/qt_trunc.vocab", data + "/uniclass.bin"); }
+        catch (const std::exception& e) { threw = true; }
+        if (!threw) { fails++; printf("  FAIL: truncated vocab did not throw\n"); }
+        remove("/tmp/qt_trunc.vocab");
+        if (fails == 0) printf("error handling: OK (bad loads throw)\n");
+    }
+
+    // --- concurrency: parallel encode() on ONE Tokenizer must stay exact ---
+    {
+        std::string text;
+        for (int i = 0; i < 200; i++)
+            text += "The quick brown fox can't jump 1234 times over donde está the lazy 犬!\n";
+        auto expect = tok.encode(text);
+        int bad = 0;
+        std::vector<std::thread> ths;
+        for (int t = 0; t < 8; t++)
+            ths.emplace_back([&]{
+                for (int r = 0; r < 50; r++)
+                    if (tok.encode(text) != expect) __atomic_fetch_add(&bad, 1, __ATOMIC_RELAXED);
+            });
+        for (auto& th : ths) th.join();
+        if (bad) { fails++; printf("  FAIL: concurrent encode diverged (%d)\n", bad); }
+        else printf("concurrency: OK (8 threads x 50 encodes, one shared Tokenizer, all exact)\n");
+    }
+
     if (fails == 0) printf("PASS: all %u vectors exact (encode == tiktoken, decode round-trips)\n", ncase);
-    else            printf("FAIL: %d/%u vectors\n", fails, ncase);
+    else            printf("FAIL: %d failures\n", fails);
     return fails ? 1 : 0;
 }

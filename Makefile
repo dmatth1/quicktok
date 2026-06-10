@@ -20,14 +20,14 @@ BUILD   := build
 VERSION   := 0.1.0
 SOVERSION := 0
 
-# aarch64 (Apple Silicon, Graviton) gets NEON from baseline ARMv8-A and the
-# 2-byte-radix trie / dense memo. x86_64 builds correctly with the scalar +
-# SSE2 paths; the -DTRIE2/-DIVDENSE wins are validated on aarch64 (see README).
+# The 2-byte-radix trie and dense memo are always on (validated on both arches).
+# Default tunes for the build host; override CXXFLAGS_ARCH for portable binaries
+# (e.g. CXXFLAGS_ARCH="-march=x86-64-v3" for distributable x86 builds).
 UNAME_M := $(shell uname -m)
 ifneq (,$(filter $(UNAME_M),arm64 aarch64))
-  CXXFLAGS_ARCH := -mcpu=native -DTRIE2 -DIVDENSE
+  CXXFLAGS_ARCH ?= -mcpu=native
 else
-  CXXFLAGS_ARCH := -march=native
+  CXXFLAGS_ARCH ?= -march=native
 endif
 
 UNAME_S := $(shell uname -s)
@@ -43,7 +43,7 @@ else
   SHARED_FLAGS := -shared -Wl,-soname,libquicktok.$(SOEXT).$(SOVERSION)
 endif
 
-CXXFLAGS ?= -O3 -std=c++20
+CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra
 CXXFLAGS += $(CXXFLAGS_ARCH) -fPIC -Iinclude -Isrc $(CXXFLAGS_EXTRA)
 DATADIR  := $(PREFIX)/share/quicktok
 
@@ -75,11 +75,15 @@ example: lib
 	$(CXX) $(CXXFLAGS) examples/hello.cpp $(BUILD)/libquicktok.a -o $(BUILD)/hello
 	$(BUILD)/hello
 
-install: lib
-	install -d $(DESTDIR)$(PREFIX)/include $(DESTDIR)$(PREFIX)/lib $(DESTDIR)$(DATADIR)
+$(BUILD)/quicktok.pc: quicktok.pc.in | $(BUILD)
+	sed 's|@PREFIX@|$(PREFIX)|' quicktok.pc.in > $@
+
+install: lib $(BUILD)/quicktok.pc
+	install -d $(DESTDIR)$(PREFIX)/include $(DESTDIR)$(PREFIX)/lib/pkgconfig $(DESTDIR)$(DATADIR)
 	install -m644 include/quicktok.hpp $(DESTDIR)$(PREFIX)/include/
 	install -m644 $(BUILD)/libquicktok.a $(DESTDIR)$(PREFIX)/lib/
 	cp -a $(LIB_SO_REAL) $(LIB_SO) $(DESTDIR)$(PREFIX)/lib/
+	install -m644 $(BUILD)/quicktok.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/
 	install -m644 data/cl100k.vocab data/uniclass.bin data/uniclass.bin.meta $(DESTDIR)$(DATADIR)/
 
 clean:

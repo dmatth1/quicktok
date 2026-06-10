@@ -9,6 +9,9 @@
 #include <vector>
 #include "bpe.hpp"
 
+namespace quicktok {
+namespace detail {
+
 // next_match with the multibyte-optimized walk (sim v4, oracle-verified):
 //  - 3-byte UTF-8 start: r3 resolves the whole first char with 0 probes
 //  - in the loop, bytes >=0x80 probe the odd table FIRST (CJK tokens end at odd
@@ -102,3 +105,6 @@ void Vocab::encode_mb(const uint8_t* text, uint32_t len, std::vector<uint32_t>& 
     }
     out.insert(out.end(), toks.begin(), toks.end());
 }
+
+}  // namespace detail
+}  // namespace quicktok

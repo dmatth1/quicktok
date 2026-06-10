@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <stdexcept>
 
 static const uint32_t RANK_MAX = 0xFFFFFFFFu;
 
@@ -23,6 +24,9 @@ static const uint32_t RANK_MAX = 0xFFFFFFFFu;
 #endif
 #define IVTAGBITS (34 - IVBITS)
 static_assert(IVTAGBITS >= 0 && IVTAGBITS <= 14, "IVDENSE u16 slot: need 34-IVBITS <= 14 tag bits");
+
+namespace quicktok {
+namespace detail {
 
 struct Vocab {
     std::vector<uint8_t> all;            // token bytes concatenated, by id
@@ -135,10 +139,14 @@ struct Vocab {
         m ^= m >> 17;                                               // bijection done
         uint32_t h = (uint32_t)(m >> IVTAGBITS);
         uint16_t want = (uint16_t)(0x8000u | (((uint32_t)m & ((1u<<IVTAGBITS)-1)) << 1));
-        uint16_t s = ivm[h];                                        // one load
+        // relaxed atomics: each slot value is self-consistent (tag+result written in
+        // one u16 store), so concurrent encode() on the same Tokenizer is safe — a
+        // racing thread sees either the old or the new entry, both correct.
+        uint16_t s = __atomic_load_n(&ivm[h], __ATOMIC_RELAXED);    // one load
         if ((uint16_t)(s & 0xFFFEu) == want) return s & 1;
         bool res = ivtp_slow(t1, t2);
-        ivm[h] = (uint16_t)(want | (uint16_t)res); return res;
+        __atomic_store_n(&ivm[h], (uint16_t)(want | (uint16_t)res), __ATOMIC_RELAXED);
+        return res;
     }
     bool ivtp_slow(uint32_t t1, uint32_t t2) const {
         uint32_t limit = RANK_MAX;
@@ -224,14 +232,28 @@ struct Vocab {
     }
 
     static Vocab load(const char* path) {
-        FILE* f = fopen(path, "rb"); if (!f) { fprintf(stderr,"vocab %s\n",path); exit(1); }
-        uint32_t n; if (fread(&n,4,1,f)!=1) exit(1);
+        FILE* f = fopen(path, "rb");
+        if (!f) throw std::runtime_error(std::string("quicktok: cannot open vocab file: ") + path);
+        auto fail = [&](const char* why) {
+            fclose(f);
+            throw std::runtime_error(std::string("quicktok: bad vocab file (") + why + "): " + path);
+        };
+        uint32_t n; if (fread(&n,4,1,f)!=1) fail("truncated header");
+        // token ids must fit the 17-bit packing used by the odd-token table and the
+        // 34-bit memo pair key (cl100k = 100,256 tokens; o200k needs a wider build).
+        if (n == 0 || n > (1u<<17)) fail("token count out of range (this build supports <= 131072 ids)");
         Vocab V; V.n = n;
         std::vector<std::string> tb(n);
+        std::vector<bool> seen(n, false);
         std::string buf;
-        for (uint32_t k=0;k<n;k++){ uint16_t bl; if(fread(&bl,2,1,f)!=1)exit(1);
-            buf.resize(bl); if(bl&&fread(buf.data(),1,bl,f)!=bl)exit(1);
-            uint32_t r; if(fread(&r,4,1,f)!=1)exit(1); tb[r]=buf; }
+        for (uint32_t k=0;k<n;k++){ uint16_t bl; if(fread(&bl,2,1,f)!=1) fail("truncated record");
+            if (bl == 0 || bl > 255) fail("token length out of range");
+            buf.resize(bl); if(fread(buf.data(),1,bl,f)!=bl) fail("truncated token bytes");
+            uint32_t r; if(fread(&r,4,1,f)!=1) fail("truncated rank");
+            if (r >= n) fail("rank out of range");
+            if (seen[r]) fail("duplicate rank");
+            seen[r] = true; tb[r]=buf; }
+        { uint8_t extra; if (fread(&extra,1,1,f)==1) fail("trailing bytes"); }
         fclose(f);
         // all/tstart + b2id, by id order
         V.tstart.push_back(0);
@@ -369,3 +391,6 @@ struct Vocab {
         return V;
     }
 };
+
+}  // namespace detail
+}  // namespace quicktok

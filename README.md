@@ -150,6 +150,30 @@ an encoder bug (quicktok is byte-exact vs tiktoken on cl100k/o200k).
 (`make example`); the tables above are from the evolve harness's interleaved /
 best-of comparisons. Absolute MB/s shifts with corpus and host; the ratios don't.
 
+## Using it as a library
+
+- **Errors:** `Tokenizer::load*` throws `std::runtime_error` on missing/corrupt
+  data files (with validation: token count, ranks, record bounds — never `exit()`).
+  `encode()` throws `std::invalid_argument` past 4 GiB per call. Nothing else throws
+  on the hot path.
+- **Thread safety:** a loaded `Tokenizer` is immutable except an internal memo whose
+  slots are written with relaxed atomics (each slot value is self-consistent), so
+  **concurrent `encode()`/`decode()` on one shared `Tokenizer` is safe** — covered by
+  an 8-thread test in CI. Loading is not thread-safe with concurrent use of the same
+  object (load first, then share).
+- **Input handling:** any byte sequence is accepted; invalid UTF-8 is treated as
+  1-byte units (matching the reference's behavior on the valid-UTF-8 inputs it
+  defines; round-trip through `decode` is preserved either way). `decode()` skips
+  ids `>= vocab_size()`.
+- **Symbols:** all internals live under `quicktok::detail`; the only public surface
+  is `quicktok::Tokenizer`.
+- **Limitations (v0.1):** cl100k_base only (o200k/Llama-3 kernels exist in the
+  [evolve](https://github.com/dmatth1/evolve) lab, packaging in progress; vocabs
+  >131,072 ids are rejected at load by design — the id packing is 17-bit). Special
+  tokens (`<|endoftext|>` etc.) are not parsed — input is encoded as ordinary text,
+  i.e. tiktoken's `encode_ordinary`. Default build tunes `-mcpu/-march=native`;
+  override `CXXFLAGS_ARCH` for portable binaries.
+
 ## Regenerating data
 
 ```sh

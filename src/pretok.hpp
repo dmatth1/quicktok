@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
+#include <string>
 #include <vector>
 #if defined(__ARM_NEON) || defined(__aarch64__)
 #include <arm_neon.h>
@@ -15,6 +17,9 @@
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
 #include <immintrin.h>
 #endif
+
+namespace quicktok {
+namespace detail {
 
 // length-advance over a run of ASCII letters [A-Za-z] starting at q, SIMD 16/32B
 // per step. Stops at the first non-ASCII-letter byte (incl any byte >=128, which
@@ -129,13 +134,19 @@ struct UClass {
     inline bool isL(uint32_t cp) const { return cp<65536 ? (bmp[cp]&1) : in(Llo,Lhi,cp); }
     inline bool isN(uint32_t cp) const { return cp<65536 ? (bmp[cp]&2) : in(Nlo,Nhi,cp); }
     inline bool isS(uint32_t cp) const { return cp<65536 ? (bmp[cp]&4) : in(Slo,Shi,cp); }
-    static void rd(FILE* f, std::vector<uint32_t>& lo, std::vector<uint32_t>& hi){
-        uint32_t n; if(fread(&n,4,1,f)!=1) exit(1); lo.resize(n); hi.resize(n);
-        for(uint32_t i=0;i<n;i++){ uint32_t v[2]; if(fread(v,4,2,f)!=2) exit(1); lo[i]=v[0]; hi[i]=v[1]; }
+    static void rd(FILE* f, std::vector<uint32_t>& lo, std::vector<uint32_t>& hi, const char* path){
+        auto fail = [&]{ fclose(f); throw std::runtime_error(std::string("quicktok: bad uniclass file: ") + path); };
+        uint32_t n; if(fread(&n,4,1,f)!=1) fail();
+        if (n > 100000) fail();                      // sane range-count bound
+        lo.resize(n); hi.resize(n);
+        for(uint32_t i=0;i<n;i++){ uint32_t v[2]; if(fread(v,4,2,f)!=2) fail();
+            if (v[0] > v[1] || v[1] > 0x10FFFF) fail();
+            lo[i]=v[0]; hi[i]=v[1]; }
     }
     static UClass load(const char* path){
-        FILE* f=fopen(path,"rb"); if(!f){fprintf(stderr,"uniclass %s\n",path);exit(1);}
-        UClass U; rd(f,U.Llo,U.Lhi); rd(f,U.Nlo,U.Nhi); rd(f,U.Slo,U.Shi); fclose(f);
+        FILE* f=fopen(path,"rb");
+        if(!f) throw std::runtime_error(std::string("quicktok: cannot open uniclass file: ") + path);
+        UClass U; rd(f,U.Llo,U.Lhi,path); rd(f,U.Nlo,U.Nhi,path); rd(f,U.Slo,U.Shi,path); fclose(f);
         U.bmp.assign(65536, 0);
         auto mark=[&](std::vector<uint32_t>&lo,std::vector<uint32_t>&hi,uint8_t bit){ for(size_t i=0;i<lo.size();i++){ uint32_t a=lo[i],b=hi[i]>65535?65535:hi[i]; if(lo[i]<65536) for(uint32_t c=a;c<=b;c++) U.bmp[c]|=bit; } };
         mark(U.Llo,U.Lhi,1); mark(U.Nlo,U.Nhi,2); mark(U.Slo,U.Shi,4);
@@ -235,3 +246,6 @@ static void pretok(const UClass& U, const uint8_t* t, uint32_t len, CB&& cb) {
         cb(p, l); p += l;
     }
 }
+
+}  // namespace detail
+}  // namespace quicktok

@@ -1,8 +1,11 @@
 #include "quicktok.hpp"
 #include "bpe.hpp"
 #include "pretok.hpp"
+#include <stdexcept>
 
 namespace quicktok {
+using detail::Vocab;
+using detail::UClass;
 
 struct Tokenizer::Impl {
     Vocab V;
@@ -35,6 +38,8 @@ static inline void merge_piece(const Vocab& V, const uint8_t* piece, size_t len,
 }
 
 void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out) const {
+    if (len > 0xFFFFFFFFull)
+        throw std::invalid_argument("quicktok: input exceeds 4 GiB per encode() call — split it");
     const Vocab& V = impl->V;
     const UClass& U = impl->U;
     uint32_t L = (uint32_t)len, p = 0;
@@ -43,7 +48,7 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
     while (p < L) {
         uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
         if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {       // ASCII word
-            uint32_t we = ascii_letter_run(t, ls, L);
+            uint32_t we = detail::ascii_letter_run(t, ls, L);
             if (we == L || t[we] < 0x80) {                            // pure-ASCII word
                 uint32_t wlen = we - p;
                 uint32_t first = V.next_match(t + p, wlen);
@@ -52,7 +57,7 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
                 p = we; continue;
             }
         }
-        uint32_t l = pretok_next(U, t, p, L);
+        uint32_t l = detail::pretok_next(U, t, p, L);
         merge_piece(V, t + p, l, out); p += l;
     }
 }
