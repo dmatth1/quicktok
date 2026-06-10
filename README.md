@@ -1,10 +1,10 @@
 # quicktok
 
-A fast, exact BPE tokenizer for OpenAI's `cl100k_base` (GPT-3.5 / GPT-4), written in C++.
+A fast, exact BPE tokenizer for OpenAI encodings — `cl100k_base` (GPT-3.5 / GPT-4) and `o200k_base` (GPT-4o) — written in C++.
 
 - **Exact** — token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken). The reference is the spec, and the test suite enforces it.
 - **Fast** — about **3×** the fastest exact tokenizer we know of ([bpe-openai](https://github.com/github/rust-gems)), **6–8×** tiktoken, **10×+** [TokenDagger](https://github.com/M4THYOU/TokenDagger) and llama.cpp. Single-threaded, measured against each project's own API ([benchmarks](#benchmarks)).
-- **Self-contained** — C++20, no external dependencies, ships its own data files (~1.3 MB).
+- **Self-contained** — C++20, no external dependencies, ships its own data files.
 - **Thread-safe** — load once, call `encode()` from as many threads as you like.
 
 ## Quick start
@@ -19,9 +19,13 @@ make test       # verifies exact ids vs tiktoken + decode round-trip
 ```cpp
 #include <quicktok.hpp>
 
-auto tok = quicktok::Tokenizer::load_dir("data");
+auto tok = quicktok::Tokenizer::load_dir("data");              // cl100k_base
+auto gpt4o = quicktok::Tokenizer::load_dir("data", "o200k_base");
+
 auto ids = tok.encode("Hello, quicktok! 日本語 🚀");  // std::vector<uint32_t>
 std::string text = tok.decode(ids);                   // lossless round-trip
+size_t n = tok.count("how many tokens is this?");
+auto with_sp = tok.encode_with_special("a<|endoftext|>b");  // specials -> ids
 ```
 
 Link against `build/libquicktok.a`, or `make install` and use `pkg-config --cflags --libs quicktok`. The data files install to `share/quicktok`.
@@ -84,7 +88,7 @@ The win is *larger* on natural text than on synthetic — the real-corpus number
 | **quicktok kernel (Llama-3)** | **~78** | ~17 |
 | llama.cpp | ~5.4 | ~1.2 |
 
-Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences, not an encoder bug. The Llama-3 and o200k (GPT-4o) kernels live in the [evolve](https://github.com/dmatth1/evolve) lab today; packaging them into this library is in progress.
+Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences, not an encoder bug. The Llama-3 kernel lives in the [evolve](https://github.com/dmatth1/evolve) lab today; o200k ships in this library.
 </details>
 
 <details>
@@ -108,16 +112,19 @@ The full measurement trail — every design decision, dead end, and benchmark �
 ```cpp
 namespace quicktok {
 class Tokenizer {
-    static Tokenizer load_dir(const std::string& dir);   // expects cl100k.vocab + uniclass.bin
-    static Tokenizer load(const std::string& vocab_path, const std::string& uniclass_path);
+    // encoding: "cl100k_base" (default) or "o200k_base"
+    static Tokenizer load_dir(const std::string& dir, const std::string& encoding = "cl100k_base");
 
-    std::vector<uint32_t> encode(std::string_view text) const;
+    std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
+    std::vector<uint32_t> encode_with_special(std::string_view) const;  // allowed_special="all"
     void encode(const uint8_t* text, size_t len, std::vector<uint32_t>& out) const;
+    size_t count(std::string_view text) const;
 
-    std::string decode(const std::vector<uint32_t>& ids) const;
+    std::string decode(const std::vector<uint32_t>& ids) const;         // handles special ids too
     void decode(const uint32_t* ids, size_t n, std::string& out) const;
 
     size_t vocab_size() const;
+    const std::string& encoding() const;
 };
 }
 ```
@@ -125,11 +132,11 @@ class Tokenizer {
 - `load*` throws `std::runtime_error` on missing or corrupt data files. Nothing throws on the encode hot path (one exception: inputs over 4 GiB per call are rejected).
 - A loaded `Tokenizer` is safe to share across threads — concurrent `encode()`/`decode()` is supported and tested.
 - Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged.
-- Encoding is tiktoken's `encode_ordinary`: special tokens like `<|endoftext|>` are treated as plain text, not parsed.
+- `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
 
 ## Notes & limitations
 
-- **cl100k_base only** for now. o200k (GPT-4o) and Llama-3 support is in progress.
+- Encodings: **cl100k_base** and **o200k_base**. (Llama-3 runs in the [evolve](https://github.com/dmatth1/evolve) lab; packaging it is in progress.) o200k on Apple M1: ~100 MB/s prose / ~117 code / ~76 CJK, exact on a 9 MB / 2.2 M-token corpus — roughly 80% of cl100k throughput (2× vocab, bigger tables), still ~2× bpe-openai ([x86 numbers](https://github.com/dmatth1/evolve/blob/evolve-tokenizer/tokenizer/BENCHMARKING.md): 2.1× bpe, 2.8× tiktoken-rs).
 - Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.
 - The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](data/uniclass.bin.meta).
 

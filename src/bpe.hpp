@@ -28,6 +28,13 @@ static_assert(IVTAGBITS >= 0 && IVTAGBITS <= 14, "IVDENSE u16 slot: need 34-IVBI
 namespace quicktok {
 namespace detail {
 
+// odd-token side-table layout: 18-bit token field (fits both cl100k's 100,256 and
+// o200k's 199,998 ids). slot = (key+1)<<19 | hasdeeper<<18 | token.
+constexpr uint32_t OTAB_TOKMASK = (1u << 18) - 1;
+constexpr uint64_t OTAB_DEEPBIT = 1ull << 18;
+constexpr int      OTAB_KEYSH   = 19;
+constexpr uint32_t OTAB_LOWMASK = (1u << 19) - 1;   // hasdeeper|token (odd_lookup return)
+
 struct Vocab {
     std::vector<uint8_t> all;            // token bytes concatenated, by id
     std::vector<uint32_t> tstart;        // tstart[id]..tstart[id+1]
@@ -53,6 +60,13 @@ struct Vocab {
     // index(IVBITS)+tag(34-IVBITS) reconstruct the pair exactly — no aliasing, the
     // memo stays exact. slot = 0x8000 | tag<<1 | result; 0 = empty.
     mutable std::vector<uint16_t> ivm; uint32_t ivmask = 0;
+    // wide-id fallback memo (vocabs with ids >= 2^17, e.g. o200k): classic u64
+    // slots, same slot count. Selected once per Vocab at load; the hot dense path
+    // is untouched and the wide path lives in trie2_mb.cpp (own TU — see the
+    // inlining note above encode_mb).
+    mutable std::vector<uint64_t> ivm64;
+    bool wide_ids = false;
+    bool ivtp_wide(uint32_t t1, uint32_t t2) const;   // trie2_mb.cpp
     // 2-byte-radix trie: walk consumes 2 bytes per ONE aligned-16B slot load (key +
     // child + step-best-token packed). Odd-depth tokens via the side table otab,
     // probed only on 2-byte miss / trailing byte. r3 resolves 3-byte UTF-8 starts
@@ -96,10 +110,10 @@ struct Vocab {
         while (etab[i]) { if (es_kp1(etab[i]) == key) return es_child(etab[i]); i = (i+1) & emask; }
         return 0;  // node 0 = root = "no edge" (root is never a child)
     }
-    inline uint32_t odd_lookup(uint32_t node, uint8_t b) const {  // (hasdeeper<<17|tok) or MAX if absent
+    inline uint32_t odd_lookup(uint32_t node, uint8_t b) const {  // (hasdeeper|tok) or MAX if absent
         uint64_t k = ((uint64_t)node << 8) | b;
         uint32_t i = (uint32_t)(k * 0x9E3779B97F4A7C15ull >> 40) & omask;
-        while (otab[i]) { if ((otab[i] >> 18) == (k + 1)) return (uint32_t)(otab[i] & 0x3FFFF); i = (i+1) & omask; }
+        while (otab[i]) { if ((otab[i] >> OTAB_KEYSH) == (k + 1)) return (uint32_t)(otab[i] & OTAB_LOWMASK); i = (i+1) & omask; }
         return RANK_MAX;
     }
     // longest token that is a prefix of text[0..len) — 2-byte steps, 1 slot load each.
@@ -121,18 +135,19 @@ struct Vocab {
             uint64_t key = k + 1, val = 0;
             while (e2[h].key) { if (e2[h].key == key) { val = e2[h].val; break; } h = (h+1) & e2mask; }
             if (!val) {  // no 2-byte step: an odd-depth token may still extend one byte
-                uint32_t o = odd_lookup(node, text[i]); if (o != RANK_MAX) best = o & 0x1FFFF;
+                uint32_t o = odd_lookup(node, text[i]); if (o != RANK_MAX) best = o & OTAB_TOKMASK;
                 return best;
             }
             uint32_t b32 = (uint32_t)val; if (b32 != RANK_MAX) best = b32;
             node = (uint32_t)(val >> 32); i += 2;
         }
-        if (node && i < len) { uint32_t o = odd_lookup(node, text[i]); if (o != RANK_MAX) best = o & 0x1FFFF; }
+        if (node && i < len) { uint32_t o = odd_lookup(node, text[i]); if (o != RANK_MAX) best = o & OTAB_TOKMASK; }
         return best;
     }
     inline uint32_t next_prefix(uint32_t id) const { return npm[id]; }
 
     bool is_valid_token_pair(uint32_t t1, uint32_t t2) const {
+        if (__builtin_expect(wide_ids, 0)) return ivtp_wide(t1, t2);
         uint64_t mk = ((uint64_t)t1 << 17) | t2;                    // 34-bit pair key
         uint64_t m = mk ^ (mk >> 17);
         m = (m * ((0x9E3779B97F4A7C15ull & 0x3FFFFFFFFull) | 1)) & 0x3FFFFFFFFull;
@@ -241,7 +256,7 @@ struct Vocab {
         uint32_t n; if (fread(&n,4,1,f)!=1) fail("truncated header");
         // token ids must fit the 17-bit packing used by the odd-token table and the
         // 34-bit memo pair key (cl100k = 100,256 tokens; o200k needs a wider build).
-        if (n == 0 || n > (1u<<17)) fail("token count out of range (this build supports <= 131072 ids)");
+        if (n == 0 || n > (1u<<18)) fail("token count out of range (max 262144 ids)");
         Vocab V; V.n = n;
         std::vector<std::string> tb(n);
         std::vector<bool> seen(n, false);
@@ -316,8 +331,8 @@ struct Vocab {
               if (L>=3 && (L&1)) {   // token ends at odd depth: side-table entry from its even parent
                   uint64_t k = ((uint64_t)path[L-1] << 8) | t[L-1];
                   uint32_t h = (uint32_t)(k * 0x9E3779B97F4A7C15ull >> 40) & V.omask;
-                  while (V.otab[h]) { if ((V.otab[h] >> 18) == k+1) break; h = (h+1) & V.omask; }
-                  if (!V.otab[h]) V.otab[h] = ((k+1) << 18) | id;   // hasdeeper flag OR'd in later
+                  while (V.otab[h]) { if ((V.otab[h] >> OTAB_KEYSH) == k+1) break; h = (h+1) & V.omask; }
+                  if (!V.otab[h]) V.otab[h] = ((k+1) << OTAB_KEYSH) | id;   // hasdeeper flag OR'd in later
               }
           }
           // ne2 over-counted duplicate edges (shared prefixes) -> rehash down to the
@@ -345,7 +360,9 @@ struct Vocab {
         // split_table + pair_lookup (ids in rank order)
         uint32_t pcap = 1; while (pcap < n*2) pcap <<= 1; V.plk.assign(pcap,0); V.plv.assign(pcap,0); V.plmask = pcap-1;
 
-        uint32_t icap = 1u<<IVBITS; V.ivm.assign(icap,0); V.ivmask = icap-1;  // packed 1-load memo (Rung C) + IVBITS sizing
+        uint32_t icap = 1u<<IVBITS; V.ivmask = icap-1;
+        V.wide_ids = (n > (1u<<17));            // ids past 17 bits: dense mixer can't pack the pair key
+        if (V.wide_ids) V.ivm64.assign(icap,0); else V.ivm.assign(icap,0);
         V.split.reserve(n);
         for (uint32_t id=0; id<n; id++){ const std::string& t=tb[id];
             uint32_t token1 = V.npm[id]; bool done=false;
@@ -364,6 +381,7 @@ struct Vocab {
         // is_valid_token_pair is only PURE once split_table/pair_lookup are complete;
         // construction-time calls populated the memo with stale (incomplete-table) results. Clear it.
         std::fill(V.ivm.begin(), V.ivm.end(), 0);
+        std::fill(V.ivm64.begin(), V.ivm64.end(), 0);
         // Built LAST on purpose: allocating these mid-load shifted the heap layout of
         // the hot tables (e2/otab/plk/ivm) and cost ~13% on Latin (L2 physical-conflict
         // luck, measured 2026-06-09). Keep the v1 allocation sequence; append new tables.
@@ -371,9 +389,9 @@ struct Vocab {
           for (uint32_t i=0;i<=V.emask;i++) if (V.etab[i])
               haschild[(uint32_t)(((uint64_t)es_kp1(V.etab[i])-1) >> 8)] = 1;
           for (uint32_t h=0; h<=V.omask; h++) if (V.otab[h]) {           // OR hasdeeper into otab
-              uint64_t k = (V.otab[h] >> 18) - 1;
+              uint64_t k = (V.otab[h] >> OTAB_KEYSH) - 1;
               uint32_t m = V.edge((uint32_t)(k >> 8), (uint8_t)(k & 255));
-              if (m && haschild[m]) V.otab[h] |= (1ull << 17);
+              if (m && haschild[m]) V.otab[h] |= OTAB_DEEPBIT;
           }
           V.r3node.assign(1u<<16, 0); V.r3best.assign(1u<<16, RANK_MAX);  // r3 direct table
           for (uint32_t b0 = 0xE0; b0 <= 0xEF; b0++)

@@ -34,8 +34,8 @@ static uint32_t nm_mb(const Vocab& V, const uint8_t* text, uint32_t len) {
             odd_done = true;
             uint32_t o = V.odd_lookup(node, text[i]);
             if (o != RANK_MAX) {
-                best = o & 0x1FFFF;
-                if (!(o >> 17)) return best;           // no deeper token exists: done in 1 probe
+                best = o & OTAB_TOKMASK;
+                if (!(o & OTAB_DEEPBIT)) return best;  // no deeper token exists: done in 1 probe
             }
         }
         uint64_t k = ((uint64_t)node << 16) | ((uint32_t)text[i] << 8) | text[i+1];
@@ -45,7 +45,7 @@ static uint32_t nm_mb(const Vocab& V, const uint8_t* text, uint32_t len) {
         if (!val) {
             if (!odd_done) {
                 uint32_t o = V.odd_lookup(node, text[i]);
-                if (o != RANK_MAX) best = o & 0x1FFFF;
+                if (o != RANK_MAX) best = o & OTAB_TOKMASK;
             }
             return best;
         }
@@ -54,9 +54,22 @@ static uint32_t nm_mb(const Vocab& V, const uint8_t* text, uint32_t len) {
     }
     if (node && i < len && !odd_covered) {
         uint32_t o = V.odd_lookup(node, text[i]);
-        if (o != RANK_MAX) best = o & 0x1FFFF;
+        if (o != RANK_MAX) best = o & OTAB_TOKMASK;
     }
     return best;
+}
+
+// wide-id (o200k-class) validity memo: classic u64 slot = ((mkey+1)<<1)|result.
+// Kept out of the hot TU so the dense cl100k path's codegen is untouched.
+bool Vocab::ivtp_wide(uint32_t t1, uint32_t t2) const {
+    uint64_t mkey = ((uint64_t)t1 << 32) | t2;
+    uint32_t h = (uint32_t)((mkey * 0x9E3779B97F4A7C15ull) >> 32) & ivmask;
+    uint64_t want = (mkey + 1) << 1;
+    uint64_t s = __atomic_load_n(&ivm64[h], __ATOMIC_RELAXED);
+    if ((s >> 1) == (mkey + 1)) return s & 1;
+    bool res = ivtp_slow(t1, t2);
+    __atomic_store_n(&ivm64[h], want | (uint64_t)res, __ATOMIC_RELAXED);
+    return res;
 }
 
 // mirror of Vocab::encode_with_first (greedy fast path + backtracking fallback),

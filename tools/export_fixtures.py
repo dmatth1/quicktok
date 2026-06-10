@@ -13,15 +13,26 @@ import os, struct, tiktoken
 
 DATA = os.path.join(os.path.dirname(__file__), "..", "data")
 
-def main():
-    os.makedirs(DATA, exist_ok=True)
-    enc = tiktoken.get_encoding("cl100k_base")
+def export(name, stem):
+    enc = tiktoken.get_encoding(name)
     ranks = enc._mergeable_ranks
-    with open(os.path.join(DATA, "cl100k.vocab"), "wb") as f:
+    with open(os.path.join(DATA, stem + ".vocab"), "wb") as f:
         f.write(struct.pack("<I", len(ranks)))
         for b, r in ranks.items():
             f.write(struct.pack("<H", len(b))); f.write(b); f.write(struct.pack("<I", r))
-    print(f"vocab: {len(ranks)} tokens -> data/cl100k.vocab")
+    # specials: u32 n; per entry u32 id, u16 len, bytes
+    sp = sorted(enc._special_tokens.items(), key=lambda kv: kv[1])
+    with open(os.path.join(DATA, stem + ".special"), "wb") as f:
+        f.write(struct.pack("<I", len(sp)))
+        for tok, tid in sp:
+            b = tok.encode()
+            f.write(struct.pack("<I", tid)); f.write(struct.pack("<H", len(b))); f.write(b)
+    print(f"{name}: {len(ranks)} tokens + {len(sp)} specials -> data/{stem}.vocab/.special")
+
+def main():
+    os.makedirs(DATA, exist_ok=True)
+    export("cl100k_base", "cl100k")
+    export("o200k_base", "o200k")
 
 if __name__ == "__main__":
     main()

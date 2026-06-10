@@ -15,12 +15,8 @@ static std::vector<uint8_t> rd(const std::string& p) {
     std::vector<uint8_t> v(n); if (n && fread(v.data(), 1, n, f) != (size_t)n) exit(2); fclose(f); return v;
 }
 
-int main(int argc, char** argv) {
-    std::string data = argc > 1 ? argv[1] : "data";
-    auto tok = quicktok::Tokenizer::load_dir(data);
-    printf("vocab=%zu\n", tok.vocab_size());
-
-    auto buf = rd("test/vectors.bin");
+static int run_vectors(const quicktok::Tokenizer& tok, const std::string& path, bool special) {
+    auto buf = rd(path);
     const uint8_t* p = buf.data(); uint32_t ncase; memcpy(&ncase, p, 4); p += 4;
     int fails = 0;
     for (uint32_t c = 0; c < ncase; c++) {
@@ -31,10 +27,11 @@ int main(int argc, char** argv) {
         if (nid) memcpy(ref.data(), p, nid * 4ull);
         p += nid * 4ull;
 
-        auto got = tok.encode(text);
+        auto got = special ? tok.encode_with_special(text) : tok.encode(text);
         bool enc_ok = (got == ref);
         std::string back = tok.decode(got);
         bool dec_ok = (back == text);
+        if (!special && tok.count(text) != got.size()) { fails++; printf("  FAIL case %u: count mismatch\n", c); }
         if (!enc_ok || !dec_ok) {
             fails++;
             printf("  FAIL case %u (%u bytes): encode=%s decode=%s  got %zu ids, want %zu\n",
@@ -46,6 +43,27 @@ int main(int argc, char** argv) {
                        i < got.size() ? got[i] : 0u, i < ref.size() ? ref[i] : 0u);
         }
     }
+    return fails;
+}
+
+int main(int argc, char** argv) {
+    std::string data = argc > 1 ? argv[1] : "data";
+    int fails = 0;
+    auto tok = quicktok::Tokenizer::load_dir(data);
+    {
+        printf("cl100k_base: vocab=%zu\n", tok.vocab_size());
+        fails += run_vectors(tok, "test/vectors.bin", false);
+        fails += run_vectors(tok, "test/vectors_special.bin", true);
+        if (!fails) printf("cl100k_base: vectors + specials exact\n");
+    }
+    {
+        auto t2 = quicktok::Tokenizer::load_dir(data, "o200k_base");
+        printf("o200k_base: vocab=%zu\n", t2.vocab_size());
+        fails += run_vectors(t2, "test/vectors_o200k.bin", false);
+        fails += run_vectors(t2, "test/vectors_o200k_special.bin", true);
+        if (!fails) printf("o200k_base: vectors + specials exact\n");
+    }
+
     // --- error handling: loads must THROW (never exit/crash) on bad inputs ---
     {
         bool threw = false;
@@ -82,7 +100,7 @@ int main(int argc, char** argv) {
         else printf("concurrency: OK (8 threads x 50 encodes, one shared Tokenizer, all exact)\n");
     }
 
-    if (fails == 0) printf("PASS: all %u vectors exact (encode == tiktoken, decode round-trips)\n", ncase);
+    if (fails == 0) printf("PASS: both encodings exact (encode == tiktoken incl. specials, decode round-trips)\n");
     else            printf("FAIL: %d failures\n", fails);
     return fails ? 1 : 0;
 }
