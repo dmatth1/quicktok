@@ -65,6 +65,58 @@ static inline uint32_t ascii_letter_run(const uint8_t* t, uint32_t q, uint32_t l
     return q;
 }
 
+// Advance over a run of ASCII whitespace (\t\n\v\f\r and space) from q, updating
+// *lastnl to the last \r/\n position seen. Stops at the first byte that is not ASCII
+// whitespace (incl any >=0x80 — caller's scalar loop handles Unicode \s). Predicate
+// matches uniclass \s for ASCII exactly: b==0x20 || b in 0x09..0x0D. x86 SSE2; scalar
+// elsewhere (M1 keeps its scalar scan unchanged).
+static inline uint32_t ascii_ws_run(const uint8_t* t, uint32_t q, uint32_t len, uint32_t* lastnl) {
+#if defined(__SSE2__) && !defined(NO_SIMD_LET) && !defined(NO_SIMD_WS)
+    const __m128i sp=_mm_set1_epi8(0x20), n9=_mm_set1_epi8(9), four=_mm_set1_epi8(4), z=_mm_setzero_si128();
+    const __m128i lf=_mm_set1_epi8(0x0A), cr=_mm_set1_epi8(0x0D);
+    while (q + 16 <= len) {
+        __m128i v = _mm_loadu_si128((const __m128i*)(t+q));
+        __m128i ctl = _mm_cmpeq_epi8(_mm_subs_epu8(_mm_sub_epi8(v,n9),four), z);   // v in 9..13
+        __m128i isws = _mm_or_si128(_mm_cmpeq_epi8(v,sp), ctl);
+        unsigned mws = (unsigned)_mm_movemask_epi8(isws) & 0xFFFFu;
+        unsigned mnl = (unsigned)_mm_movemask_epi8(_mm_or_si128(_mm_cmpeq_epi8(v,lf),_mm_cmpeq_epi8(v,cr))) & 0xFFFFu;
+        if (mws != 0xFFFFu) {                                   // run ends in this block
+            unsigned stop = __builtin_ctz(~mws & 0xFFFFu);
+            unsigned before = mnl & ((1u<<stop)-1);
+            if (before) *lastnl = q + 31 - __builtin_clz(before);
+            return q + stop;
+        }
+        if (mnl) *lastnl = q + 31 - __builtin_clz(mnl);
+        q += 16;
+    }
+#endif
+    while (q < len) { uint8_t b=t[q]; if (b==0x20 || (uint8_t)(b-9)<=4) { if(b==0x0A||b==0x0D)*lastnl=q; q++; } else break; }
+    return q;
+}
+
+// Advance over a run of ASCII bytes that are NOT \s, \p{L}, or \p{N} (alt4's class).
+// Stops at ws / letter / digit / any byte >=0x80 (Unicode handled by caller's scalar).
+static inline uint32_t ascii_punct_run(const uint8_t* t, uint32_t q, uint32_t len) {
+#if defined(__SSE2__) && !defined(NO_SIMD_LET) && !defined(NO_SIMD_WS)
+    const __m128i n9=_mm_set1_epi8(9), four=_mm_set1_epi8(4), z=_mm_setzero_si128();
+    const __m128i sp=_mm_set1_epi8(0x20), v20=_mm_set1_epi8(0x20), va=_mm_set1_epi8('a'), v25=_mm_set1_epi8(25);
+    const __m128i v0=_mm_set1_epi8('0'), v9=_mm_set1_epi8(9);
+    while (q + 16 <= len) {
+        __m128i v = _mm_loadu_si128((const __m128i*)(t+q));
+        __m128i ws  = _mm_or_si128(_mm_cmpeq_epi8(v,sp), _mm_cmpeq_epi8(_mm_subs_epu8(_mm_sub_epi8(v,n9),four), z));
+        __m128i let = _mm_cmpeq_epi8(_mm_subs_epu8(_mm_sub_epi8(_mm_or_si128(v,v20),va),v25), z);   // (v|0x20) in a..z
+        __m128i dig = _mm_cmpeq_epi8(_mm_subs_epu8(_mm_sub_epi8(v,v0),v9), z);                      // v in '0'..'9'
+        __m128i hi  = _mm_cmpgt_epi8(z, v);                                                          // v>=0x80 (signed <0)
+        unsigned mstop = (unsigned)_mm_movemask_epi8(_mm_or_si128(_mm_or_si128(ws,let),_mm_or_si128(dig,hi))) & 0xFFFFu;
+        if (mstop) return q + __builtin_ctz(mstop);
+        q += 16;
+    }
+#endif
+    while (q < len) { uint8_t b=t[q]; if (b>=0x80) break; uint8_t l=b|0x20;
+        if (b==0x20 || (uint8_t)(b-9)<=4 || (uint8_t)(l-'a')<=25 || (uint8_t)(b-'0')<=9) break; q++; }
+    return q;
+}
+
 struct UClass {
     std::vector<uint32_t> Llo, Lhi, Nlo, Nhi, Slo, Shi;
     uint8_t a[128];                 // ASCII: bit0=L bit1=N bit2=S
@@ -144,20 +196,28 @@ static inline uint32_t pretok_next(const UClass& U, const uint8_t* t, uint32_t p
     }
     // --- alt 4: ' ?[^\s\p{L}\p{N}]++[\r\n]*+ ---
     {
-        uint32_t q = p; if (b==' ') q+=1;
-        uint32_t cnt=0;
-        while (q<len){ uint32_t n2; uint32_t c2=u8dec(t,q,len,&n2); if(!U.isS(c2)&&!U.isL(c2)&&!U.isN(c2)){q+=n2;cnt++;} else break; }
-        if (cnt>=1) { while (q<len && (t[q]=='\r'||t[q]=='\n')) q+=1; return q - p; }
+        uint32_t q = p; if (b==' ') q+=1; uint32_t s4 = q;
+        q = ascii_punct_run(t, q, len);                                 // ASCII punct/symbol run (SIMD)
+        while (q<len){ uint32_t n2; uint32_t c2=u8dec(t,q,len,&n2); if(!U.isS(c2)&&!U.isL(c2)&&!U.isN(c2)){q+=n2;} else break; }  // Unicode tail
+        if (q > s4) { while (q<len && (t[q]=='\r'||t[q]=='\n')) q+=1; return q - p; }
     }
     // --- whitespace alts (5,6,7,8) on the maximal \s run [p,e) ---
     {
         uint32_t e=p; uint32_t lastnl=UINT32_MAX; uint32_t lastlen=1;
-        while (e<len){ uint32_t n2; uint32_t c2=u8dec(t,e,len,&n2); if(!U.isS(c2)) break; if(c2=='\r'||c2=='\n') lastnl=e; lastlen=n2; e+=n2; }
+        uint32_t e0 = ascii_ws_run(t, e, len, &lastnl); if (e0 > e) { lastlen = 1; e = e0; }   // ASCII \s run (SIMD)
+        while (e<len){ uint32_t n2; uint32_t c2=u8dec(t,e,len,&n2); if(!U.isS(c2)) break; if(c2=='\r'||c2=='\n') lastnl=e; lastlen=n2; e+=n2; }  // Unicode \s tail
         if (e==p) return 1;
+#ifdef LLAMA3_WS   // llama3 whitespace alts: \s*[\r\n]+ | \s+(?!\S) | \s+ (same as o200k)
+        if (lastnl != UINT32_MAX) return lastnl+1 - p;         // \s*[\r\n]+
+        if (e == len)            return e - p;                  // \s+(?!\S), run to EOF
+        if (e - p > lastlen)     return (e-lastlen) - p;        // \s+(?!\S)
+        return e - p;                                           // \s+
+#else              // cl100k: \s++$ | \s*[\r\n] | \s+(?!\S) | \s
         if (e==len) return e - p;                              // alt5
         if (lastnl != UINT32_MAX) return lastnl+1 - p;         // alt6
         if (e - p > lastlen) return (e-lastlen) - p;           // alt7
         return nb;                                             // alt8
+#endif
     }
 }
 
