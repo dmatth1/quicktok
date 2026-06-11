@@ -87,9 +87,12 @@ real sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
 | tiktoken (Python) | 21.6 | 19.3 | 16.3 |
 | TokenDagger | 11.0 | 11.7 | 10.2 |
 
-**Reproduce it yourself:** `make bench` (native, single-thread + parallel scaling)
-and `make bench-py` (quicktok vs tiktoken, needs `pip install tiktoken`) run on a
-bundled 1 MB public-domain corpus — no network, no setup.
+**Reproduce these tables:** `make bench-compare` fetches the same three corpora
+and re-runs every encoder with the same method (single thread, best-of-5, every
+output exact-checked first) — comparators it can't find are skipped, so
+`pip install tiktoken` alone gets you quicktok-vs-tiktoken. Full details in
+[bench/README.md](bench/README.md). For a quick offline sanity check, `make bench`
+and `make bench-py` run on a bundled 1 MB corpus — no network, no setup.
 
 <details>
 <summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads)</summary>

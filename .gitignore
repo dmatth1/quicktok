@@ -13,3 +13,6 @@ python/README.md
 wheelhouse/
 *.whl
 build/bench
+bench/corpus/
+bench/comparators/target/
+bench/comparators/Cargo.lock

@@ -5,6 +5,9 @@
 #   make lib        -- build build/libquicktok.{a,so/dylib}
 #   make test       -- build and run the correctness test (exact vs reference ids)
 #   make example    -- build the hello example
+#   make bench      -- quick offline bench on the bundled 1 MB corpus
+#   make bench-py   -- quick quicktok-vs-tiktoken bench (pip install tiktoken)
+#   make bench-compare -- reproduce the README tables (see bench/README.md)
 #   make install    -- install header + libs + data + pkg-config to $(PREFIX)
 #   make clean      -- remove build artefacts
 #
@@ -50,7 +53,7 @@ DATADIR  := $(PREFIX)/share/quicktok
 SRCS := src/quicktok.cpp src/trie2_mb.cpp src/cabi.cpp
 OBJS := $(BUILD)/quicktok.o $(BUILD)/trie2_mb.o $(BUILD)/cabi.o
 
-.PHONY: all lib test example bench bench-py install clean
+.PHONY: all lib test example bench bench-py bench-tools bench-compare install clean
 all: lib
 lib: $(BUILD)/libquicktok.a $(LIB_SO)
 
@@ -84,6 +87,14 @@ bench: lib
 
 bench-py:
 	python3 bench/bench.py
+
+# per-file bench binary used by bench/compare.py (the README-table harness)
+bench-tools: lib
+	$(CXX) $(CXXFLAGS) bench/bench_file.cpp $(BUILD)/libquicktok.a -o $(BUILD)/bench_file
+
+# reproduce the README benchmark tables (fetches corpora on first run)
+bench-compare:
+	python3 bench/compare.py
 
 $(BUILD)/quicktok.pc: quicktok.pc.in | $(BUILD)
 	sed 's|@PREFIX@|$(PREFIX)|' quicktok.pc.in > $@
