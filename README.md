@@ -143,18 +143,35 @@ known TokenDagger edge case, not an encoder bug.)
 </details>
 
 <details>
-<summary><b>vs llama.cpp</b> (x86 server, Llama-3 vocab, FineWeb 15 MB)</summary>
+<summary><b>Open-model encodings</b> (Apple M1: vs llama.cpp on Llama-3, vs Hugging Face tokenizers on Qwen3)</summary>
 
-<br>Same Llama-3 128k vocab (`ggml-vocab-llama-bpe.gguf`), quicktok's kernel vs `libllama`'s own `llama_tokenize`:
+<br>Same corpora and method as the headline tables (single thread, best-of-5, MB/s).
 
-| | MB/s | Mtok/s |
-|---|---:|---:|
-| **quicktok (Llama-3)** | **~78** | ~17 |
-| llama.cpp | ~5.4 | ~1.2 |
+**Llama-3** — quicktok vs `libllama`'s own `llama_tokenize` (same 128k vocab,
+vocab-only GGUF, llama.cpp built with `-DGGML_NATIVE=ON`):
 
-Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are
-a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences,
-not an encoder bug. See [Encodings](#encodings).
+| | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok** | **124.2** | **139.8** | **66.5** |
+| llama.cpp | 9.8 | 10.6 | 5.8 |
+
+Token agreement is 99.999% on The Pile and Code and 99.81% on multilingual
+Common Crawl — the known tiktoken-rank vs merge-list divergence (see
+[Encodings](#encodings)); quicktok matches Meta's original tokenizer.
+
+**Qwen3** — quicktok vs Hugging Face `tokenizers` (the Rust core behind
+`AutoTokenizer`), timed per document (its best case; a single 25 MB string
+drops it below 2.2 MB/s):
+
+| | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok** | **100.4** | **124.5** | **61.5** |
+| HF tokenizers | 3.4 | 3.8 | 3.1 |
+
+quicktok's output was verified token-for-token identical to HF's on all three
+corpora, on NFC-normalized input — see the Qwen note in
+[Encodings](#encodings). Reproduce: `python bench/hf_qwen_bench.py` and
+`bench/llamacpp_bench.cpp`.
 </details>
 
 <details>
@@ -214,7 +231,7 @@ Five encodings ship in the repo, each byte-exact vs its reference:
 | `o200k_base` | GPT-4o | tiktoken | ~85% of cl100k speed (2× vocab) |
 | `o200k_harmony` | GPT-OSS (20b/120b) | tiktoken | same pattern + ranks as o200k_base, extra chat specials |
 | `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
-| `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers |
+| `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers; NFC note below |
 | `llama4` | Llama 4 | Meta tiktoken-rank | **not bundled** (gated — bring your own vocab, see below) |
 
 Load one by encoding name. The Python wheel bundles all the data files, so a name
@@ -229,7 +246,11 @@ auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, 
 ```
 
 - **Qwen2.5 / Qwen3** share one byte-level BPE; quicktok reproduces the Hugging
-  Face tokenizer byte-for-byte. Apache-2.0; regenerate with
+  Face tokenizer byte-for-byte **on NFC-normalized input**. HF's pipeline runs an
+  NFC normalizer before tokenizing, which quicktok does not yet implement — input
+  containing non-NFC codepoints (rare: 6–450 bytes per 25 MB across our bench
+  corpora) tokenizes the raw bytes instead, and round-trips losslessly where HF's
+  output decodes to the normalized text. Apache-2.0; regenerate with
   `tools/export_qwen.py --download`.
 - **o200k_harmony** is o200k_base plus the harmony chat specials (`<|start|>`,
   `<|channel|>`, `<|return|>`, …) — ordinary text encodes identically to o200k_base.

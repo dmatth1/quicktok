@@ -5,6 +5,18 @@ versioning is [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- Open-model benchmark comparisons, bench-grade (M1, single thread, best-of-5,
+  three real corpora, exactness-gated): vs llama.cpp on Llama-3 (~11–13×) and vs
+  Hugging Face `tokenizers` on Qwen3 (~20–33×, per-document timing). Reproduce
+  with `bench/hf_qwen_bench.py` and `bench/llamacpp_bench.cpp`.
+
+### Known limitations
+- `qwen3` does not yet apply the NFC normalization HF's pipeline runs before
+  tokenizing: output is byte-exact vs HF on NFC input; input with non-NFC
+  codepoints (rare) tokenizes the raw bytes instead. Found by the 25 MB
+  real-corpus exactness gate.
+
 ### Changed
 - **o200k-class encodings are faster** (o200k_base, o200k_harmony, Llama-4) —
   closes part of the large-vocab gap vs cl100k (x86, single thread: +16% on

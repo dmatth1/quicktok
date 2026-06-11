@@ -37,6 +37,20 @@ encoder on each corpus × encoding, and prints the README-format markdown tables
 Missing comparators are skipped with a note, so `pip install tiktoken` alone
 already gets you quicktok-vs-tiktoken on the real corpora.
 
+## Open-model comparisons (optional)
+
+- **Qwen3 vs Hugging Face `tokenizers`**: `python bench/hf_qwen_bench.py`
+  (needs `pip install tokenizers`). Fetches Qwen's tokenizer.json (Apache-2.0),
+  NFC-normalizes the corpora (HF normalizes internally; see the main README's
+  Qwen note), exact-checks quicktok against HF, times HF per document (its best
+  case).
+- **Llama-3 vs llama.cpp**: build libllama (`cmake -B build -DGGML_NATIVE=ON
+  -DLLAMA_CURL=OFF && cmake --build build -j --target llama` in a llama.cpp
+  clone), compile `bench/llamacpp_bench.cpp` against it (header comment has the
+  command), run it per corpus (it dumps its ids), then time quicktok with
+  `build/bench_file <corpus> llama3 data`. Agreement differs from 100% by the
+  known rank-vs-merges divergence (worst on multilingual text).
+
 ## Method
 
 - **Single thread, best-of-5** wall-clock over the whole file; MB/s = bytes / best.
