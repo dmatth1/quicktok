@@ -7,21 +7,33 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: build + test
         run: make test
       - name: example
         run: make example
       - name: bench (native, smoke)
         run: make bench
+      - name: version consistency
+        run: python3 tools/check_version.py
       - name: staged install
         run: make install DESTDIR=/tmp/stage && find /tmp/stage -type f
   sanitizers:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: ASan + UBSan test
         run: |
           c++ -O1 -g -std=c++20 -march=native -fsanitize=address,undefined -fno-sanitize-recover=all \
               -Iinclude -Isrc test/test_quicktok.cpp src/quicktok.cpp src/trie2_mb.cpp -o san_test
           ./san_test data
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: fuzz smoke (30s)
+        run: |
+          clang++ -O1 -g -std=c++20 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
+            -Iinclude -Isrc test/fuzz_quicktok.cpp src/quicktok.cpp src/trie2_mb.cpp -o fuzz
+          ./fuzz -max_total_time=30 -rss_limit_mb=4096

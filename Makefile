@@ -17,7 +17,7 @@ CXX     ?= c++
 PREFIX  ?= /usr/local
 BUILD   := build
 
-VERSION   := 0.1.0
+VERSION   := 0.3.0
 SOVERSION := 0
 
 # The 2-byte-radix trie and dense memo are always on (validated on both arches).

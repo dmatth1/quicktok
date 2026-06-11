@@ -6,6 +6,6 @@ datadir=${prefix}/share/quicktok
 
 Name: quicktok
 Description: Fast exact cl100k BPE tokenizer (byte-exact vs tiktoken)
-Version: 0.1.0
+Version: 0.3.0
 Libs: -L${libdir} -lquicktok
 Cflags: -I${includedir}
