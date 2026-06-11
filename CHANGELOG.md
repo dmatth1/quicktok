@@ -3,6 +3,31 @@
 All notable changes to quicktok. Format follows [Keep a Changelog](https://keepachangelog.com);
 versioning is [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Changed
+- **o200k-class encodings are faster** (o200k_base, o200k_harmony, Llama-4) —
+  closes part of the large-vocab gap vs cl100k (x86, single thread: +16% on
+  The Pile, +8% on multilingual Common Crawl, +3% on code; o200k went from
+  ~0.68× to ~0.77× of cl100k's MB/s on the same corpora):
+  - the o200k pretokenizer got the same ASCII SIMD fast paths the cl100k scanner
+    already had (case runs for the UPPER*/LOWER+ alternatives, punct/whitespace
+    runs), plus an empty-run pre-check so probing UPPER* on a lowercase word
+    costs one byte-compare;
+  - the o200k encode loop got the fused ASCII-word fast path cl100k already had
+    (single `next_match` walk; single-token words skip the merge driver), with
+    o200k's case-split and attached-contraction semantics;
+  - the wide-id validity memo (vocabs with ids ≥ 2^17) now uses the same dense
+    bijective-mixer scheme as cl100k, widened to a 36-bit pair key: u32 slots,
+    exact (no aliasing), 2× entries per cache line; capacity is per-arch
+    (`IVBITS_W`, 2^22 on x86 — sweeps best under a 33 MB L3 — 2^20 elsewhere,
+    half the bytes of the u64 memo it replaces at equal capacity).
+  Exactness unchanged and re-verified: token-for-token vs tiktoken on
+  3×25 MB corpora (Pile / code / multilingual CC) for both cl100k and o200k,
+  plus 20k-case differential fuzz over case-transition/contraction/Unicode
+  edge inputs. cl100k throughput is unaffected (scanner and dense memo
+  untouched). ARM is functionally identical but unmeasured (scalar fallbacks).
+
 ## [0.3.0]
 
 First release intended for general use. Adds two encodings, language bindings, and

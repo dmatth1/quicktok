@@ -70,6 +70,31 @@ static inline uint32_t ascii_letter_run(const uint8_t* t, uint32_t q, uint32_t l
     return q;
 }
 
+// length-advance over a run of ASCII bytes in [base, base+25] from q — i.e. [A-Z]
+// (base='A') or [a-z] (base='a'). Same construction as ascii_letter_run minus the
+// case fold; any byte >= 0x80 stops the run (caller handles Unicode via u8dec).
+// Used by the o200k scanner's UPPER*/LOWER+ alternatives. SSE2 on x86; scalar
+// elsewhere (the scalar tail computes the identical predicate, so all paths agree).
+static inline uint32_t ascii_case_run(const uint8_t* t, uint32_t q, uint32_t len, uint8_t base) {
+    // empty-run pre-check: the o200k cascade probes UPPER* on lowercase words (and
+    // vice versa) constantly — bail on the first byte before paying for a SIMD block.
+    if (q >= len || (uint8_t)(t[q] - base) > 25u) return q;
+#if defined(__SSE2__) && !defined(NO_SIMD_LET)
+    const __m128i vb = _mm_set1_epi8((char)base), v25 = _mm_set1_epi8(25), vz = _mm_setzero_si128();
+    while (q + 16 <= len) {
+        __m128i v  = _mm_loadu_si128((const __m128i*)(t + q));
+        __m128i nc = _mm_subs_epu8(_mm_sub_epi8(v, vb), v25);        // 0 iff t[i] in [base, base+25]
+        unsigned m = (unsigned)_mm_movemask_epi8(_mm_cmpeq_epi8(nc, vz)) & 0xFFFFu;
+        if (m != 0xFFFFu) return q + (uint32_t)__builtin_ctz((~m) & 0xFFFFu);
+        q += 16;
+    }
+#endif
+    while (q < len && (uint8_t)(t[q] - base) <= 25u) q++;
+    return q;
+}
+static inline uint32_t ascii_upper_run(const uint8_t* t, uint32_t q, uint32_t len) { return ascii_case_run(t, q, len, 'A'); }
+static inline uint32_t ascii_lower_run(const uint8_t* t, uint32_t q, uint32_t len) { return ascii_case_run(t, q, len, 'a'); }
+
 // Advance over a run of ASCII whitespace (\t\n\v\f\r and space) from q, updating
 // *lastnl to the last \r/\n position seen. Stops at the first byte that is not ASCII
 // whitespace (incl any >=0x80 — caller's scalar loop handles Unicode \s). Predicate

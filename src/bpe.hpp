@@ -42,6 +42,18 @@ template <class T> static inline void qt_relaxed_store(T& x, T v) { x = v; }
 #endif
 #define IVTAGBITS (34 - IVBITS)
 static_assert(IVTAGBITS >= 0 && IVTAGBITS <= 14, "IVDENSE u16 slot: need 34-IVBITS <= 14 tag bits");
+#ifndef IVBITS_W
+// wide-id (36-bit key) memo capacity; u32 slots. Misses are expensive (ivtp_slow
+// chains), so capacity beats footprint until the memo crowds the LLC: x86 sweeps
+// best at 2^22 (16 MB, vs 33 MB L3 on the bench Xeon; 2^23 regresses). Non-x86
+// keeps 2^20 (4 MB) — same capacity as the u64 memo it replaced, half the bytes.
+#if defined(__x86_64__) || defined(_M_X64)
+#define IVBITS_W 22
+#else
+#define IVBITS_W 20
+#endif
+#endif
+static_assert(36 - IVBITS_W >= 0 && 36 - IVBITS_W <= 30, "IVWIDE u32 slot: need 36-IVBITS_W <= 30 tag bits");
 
 namespace quicktok {
 namespace detail {
@@ -78,11 +90,13 @@ struct Vocab {
     // index(IVBITS)+tag(34-IVBITS) reconstruct the pair exactly — no aliasing, the
     // memo stays exact. slot = 0x8000 | tag<<1 | result; 0 = empty.
     mutable std::vector<uint16_t> ivm; uint32_t ivmask = 0;
-    // wide-id fallback memo (vocabs with ids >= 2^17, e.g. o200k): classic u64
-    // slots, same slot count. Selected once per Vocab at load; the hot dense path
-    // is untouched and the wide path lives in trie2_mb.cpp (own TU — see the
-    // inlining note above encode_mb).
-    mutable std::vector<uint64_t> ivm64;
+    // wide-id memo (vocabs with ids >= 2^17, e.g. o200k): same dense bijective-
+    // mixer scheme widened to a 36-bit pair key (ids < 2^18, enforced at load).
+    // u32 slots = 0x80000000 | tag<<1 | result (tag = 36-IVBITS_W bits); 4 MB at
+    // 2^20 — half the u64 memo it replaces, 2x entries per cache line. Selected
+    // once per Vocab at load; the hot dense path is untouched and the wide path
+    // lives in trie2_mb.cpp (own TU — see the inlining note above encode_mb).
+    mutable std::vector<uint32_t> ivmw;
     bool wide_ids = false;
     bool ivtp_wide(uint32_t t1, uint32_t t2) const;   // trie2_mb.cpp
     // 2-byte-radix trie: walk consumes 2 bytes per ONE aligned-16B slot load (key +
@@ -323,10 +337,16 @@ struct Vocab {
                 if (n2){ V.r2node[idx]=n2; uint32_t t2=V.tnode_tok[n2]; V.r2best[idx]=(t2!=RANK_MAX)?t2:tok1; }
                 else { V.r2node[idx]=0; V.r2best[idx]=tok1; } } }
         // 2-byte trie + odd-token side table, derived from the (complete) byte trie.
+        // e2 target load factor, tunable per-arch like EDGE_LOAD (-DE2_LOAD=0.x):
+        // pow2 sizing means the real choices are ~0.39 (default) vs ~0.78 (half the
+        // footprint, ~2x probes) — the footprint matters once the vocab outgrows L2.
+#ifndef E2_LOAD
+#define E2_LOAD 0.45
+#endif
         { size_t ne2 = 0, nodd = 0;
           // first pass: count
           for (uint32_t id=0; id<n; id++){ uint32_t L=V.tlen[id]; if (L>=4) ne2 += (L-2)/2; if (L>=3 && (L&1)) nodd++; }
-          uint32_t cap2 = 1024; while ((double)ne2/cap2 > 0.45) cap2 <<= 1;          // upper bound (dups counted)
+          uint32_t cap2 = 1024; while ((double)ne2/cap2 > (E2_LOAD)) cap2 <<= 1;     // upper bound (dups counted)
           uint32_t capo = 1024; while ((double)nodd/capo > 0.45) capo <<= 1;
           V.e2.assign(cap2, E2{0,0}); V.e2mask = cap2-1;
           V.otab.assign(capo, 0);     V.omask  = capo-1;
@@ -356,7 +376,7 @@ struct Vocab {
           // ne2 over-counted duplicate edges (shared prefixes) -> rehash down to the
           // tightest power-of-2 at <=0.45 load over the DISTINCT count (byte-trie pattern).
           { size_t used2=0; for (auto& s : V.e2) if (s.key) used2++;
-            uint32_t want = 1024; while ((double)used2/want > 0.45) want <<= 1;
+            uint32_t want = 1024; while ((double)used2/want > (E2_LOAD)) want <<= 1;
             if (want < V.e2mask+1) {
                 std::vector<E2> ne(want, E2{0,0}); uint32_t nm = want-1;
                 for (uint32_t i=0;i<=V.e2mask;i++) if (V.e2[i].key) {
@@ -379,8 +399,8 @@ struct Vocab {
         uint32_t pcap = 1; while (pcap < n*2) pcap <<= 1; V.plk.assign(pcap,0); V.plv.assign(pcap,0); V.plmask = pcap-1;
 
         uint32_t icap = 1u<<IVBITS; V.ivmask = icap-1;
-        V.wide_ids = (n > (1u<<17));            // ids past 17 bits: dense mixer can't pack the pair key
-        if (V.wide_ids) V.ivm64.assign(icap,0); else V.ivm.assign(icap,0);
+        V.wide_ids = (n > (1u<<17));            // ids past 17 bits: the 34-bit mixer can't pack the pair key
+        if (V.wide_ids) V.ivmw.assign(1u<<IVBITS_W,0); else V.ivm.assign(icap,0);
         V.split.reserve(n);
         for (uint32_t id=0; id<n; id++){ const std::string& t=tb[id];
             uint32_t token1 = V.npm[id]; bool done=false;
@@ -399,7 +419,7 @@ struct Vocab {
         // is_valid_token_pair is only PURE once split_table/pair_lookup are complete;
         // construction-time calls populated the memo with stale (incomplete-table) results. Clear it.
         std::fill(V.ivm.begin(), V.ivm.end(), 0);
-        std::fill(V.ivm64.begin(), V.ivm64.end(), 0);
+        std::fill(V.ivmw.begin(), V.ivmw.end(), 0);
         // Built LAST on purpose: allocating these mid-load shifted the heap layout of
         // the hot tables (e2/otab/plk/ivm) and cost ~13% on Latin (L2 physical-conflict
         // luck, measured 2026-06-09). Keep the v1 allocation sequence; append new tables.

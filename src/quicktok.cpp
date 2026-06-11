@@ -133,6 +133,27 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
     if (impl->o200k) {
         const UClassO& U = impl->UO;
         while (p < L) {
+            // ASCII-word fast path, fused (o200k flavor of the cl100k loop below).
+            // For ASCII, UPPER==[A-Z] and LOWER==[a-z], so alts 1+2 reduce to: the
+            // piece ends after [A-Z]*[a-z]+ if any lowers follow the upper run, else
+            // after [A-Z]+ — i.e. upper run then lower run — plus the optional
+            // (?i:'s|'t|'re|'ve|'m|'ll|'d) suffix (o200k attaches contractions to the
+            // word, unlike cl100k where they're a separate alternative). Bail to the
+            // general scanner if the run ends at a non-ASCII byte: a Unicode letter
+            // or mark could extend the match.
+            uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
+            if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {
+                uint32_t ue = detail::ascii_upper_run(t, ls, L);
+                uint32_t we = detail::ascii_lower_run(t, ue, L);
+                if (we == L || t[we] < 0x80) {
+                    if (we < L && t[we] == '\'') we = detail::o_contraction(t, we, L);
+                    uint32_t wlen = we - p;
+                    uint32_t first = V.next_match(t + p, wlen);
+                    if (V.token_len(first) == wlen) out.push_back(first); // single token: fused
+                    else V.encode_with_first(t + p, wlen, first, out);    // reuse the walk
+                    p = we; continue;
+                }
+            }
             uint32_t l = detail::pretok_next_o200k(U, t, p, L);
             if (!l) l = 1;
             merge_piece(V, t + p, l, out); p += l;
