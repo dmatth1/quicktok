@@ -21,7 +21,7 @@ pip install quicktok-v1
 
 ```python
 import quicktok
-enc = quicktok.get_encoding("cl100k_base")        # or "o200k_base", "llama3"
+enc = quicktok.get_encoding("cl100k_base")        # or "o200k_base", "o200k_harmony", "llama3", "qwen3"
 ids = enc.encode("hello world")                   # == tiktoken.encode_ordinary
 text = enc.decode(ids)
 quicktok.encoding_for_model("gpt-4o").count("...")  # tiktoken-style model lookup
@@ -215,6 +215,7 @@ Five encodings ship in the repo, each byte-exact vs its reference:
 | `o200k_harmony` | GPT-OSS (20b/120b) | tiktoken | same pattern + ranks as o200k_base, extra chat specials |
 | `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
 | `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers |
+| `llama4` | Llama 4 | Meta tiktoken-rank | **not bundled** (gated — bring your own vocab, see below) |
 
 Load one by encoding name. The Python wheel bundles all the data files, so a name
 is all you need; in C++ you also point at the directory holding them (`data/` in
