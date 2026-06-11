@@ -10,6 +10,10 @@ CASES = [
     "   leading\n\ttabs and  spaces   ", "ALLCAPS lowercase MixedCase 42 3.14",
     "don't can't I'll we've they're", "https://example.com/path?q=1&x=2",
     "", "a", "\n\n\n", "Ω≈ç√∫˜µ≤≥÷ åß∂ƒ©˙∆˚¬", "中文 English 混合 text 123",
+    # CJK/letters directly adjacent to Latin CAPS — exercises o200k's UPPER*/LOWER+
+    # pretok backtrack (Lo is in both classes; Lu is UPPER-only). Regression for the
+    # "亚洲AV" boundary bug. No spaces: the adjacency is the whole point.
+    "噜噜亚洲AV中文ENGLISH日本語XY한국어KRΩβγXYZ",
 ]
 SPECIAL_CASES = [
     "<|endoftext|>",

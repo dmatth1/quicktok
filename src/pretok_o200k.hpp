@@ -43,16 +43,20 @@ struct UClassO {
     }
 };
 
-// alt1: [UPPER]*[LOWER]+ at start -> end, or 0. Greedy U* then L+, with the one-step
-// backtrack (a trailing BOTH char — Lm/Lo/M, incl CJK — given back so L+ can take it).
+// alt1: [UPPER]*[LOWER]+ at start -> end, or 0. Greedy U* then L+.
 static inline uint32_t o_matchUL(const UClassO& U, const uint8_t* t, uint32_t start, uint32_t len) {
-    uint32_t i=start, lastU=start, n;
-    while (i<len) { uint32_t cp=u8dec(t,i,len,&n); if (U.isU(cp)) { lastU=i; i+=n; } else break; }
+    uint32_t i=start, n;
+    while (i<len) { uint32_t cp=u8dec(t,i,len,&n); if (U.isU(cp)) { i+=n; } else break; }  // UPPER* -> [start,i)
     uint32_t j=i; bool any=false;
-    while (j<len) { uint32_t cp=u8dec(t,j,len,&n); if (U.isLo(cp)) { j+=n; any=true; } else break; }
+    while (j<len) { uint32_t cp=u8dec(t,j,len,&n); if (U.isLo(cp)) { j+=n; any=true; } else break; }  // LOWER+
     if (any) return j;
-    if (i>start) { uint32_t cp=u8dec(t,lastU,len,&n); if (U.isLo(cp)) return i; }   // give back BOTH char
-    return 0;
+    // LOWER+ empty: backtrack the greedy UPPER* to the LAST LOWER-eligible (BOTH) char in
+    // [start,i) — it becomes the trailing LOWER+. The whole UPPER* run is LOWER-eligible up
+    // to that point, so the match ends right after it. (e.g. "亚洲AV": UPPER* grabbed 亚洲AV,
+    // but 亚洲 are Lo/BOTH and AV are Lu/UPPER-only, so alt1 matches "亚洲", not "亚洲AV".)
+    uint32_t e=0, p=start;
+    while (p<i) { uint32_t cp=u8dec(t,p,len,&n); if (U.isLo(cp)) e=p+n; p+=n; }
+    return e;   // 0 if the UPPER* run has no LOWER-eligible char (alt1 truly fails -> alt2)
 }
 // alt2: [UPPER]+[LOWER]* at start -> end, or 0.
 static inline uint32_t o_matchUpL(const UClassO& U, const uint8_t* t, uint32_t start, uint32_t len) {
