@@ -43,17 +43,11 @@ public:
         { py::gil_scoped_release rel; tok.decode(ids.data(), ids.size(), out); }
         return out;   // utf-8 -> str
     }
-    std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string>& texts,
-                                                    unsigned threads) const {
-        std::vector<std::string_view> views(texts.begin(), texts.end());
-        py::gil_scoped_release rel;
-        return tok.encode_batch(views, threads);
-    }
     // flat batch: encode in parallel (GIL released), return one contiguous uint32
     // token buffer + an int64 offsets array (len n+1) instead of n Python lists.
     // doc i's tokens = tokens[offsets[i]:offsets[i+1]]. Avoids per-document Python
-    // object construction — the marshalling cost that caps the list-returning path.
-    py::tuple encode_batch_numpy(const std::vector<std::string>& texts, unsigned threads) const {
+    // object construction — the marshalling cost that would cap a list-returning path.
+    py::tuple encode_batch(const std::vector<std::string>& texts, unsigned threads) const {
         std::vector<std::vector<uint32_t>> res;
         {
             std::vector<std::string_view> views(texts.begin(), texts.end());
@@ -96,10 +90,8 @@ PYBIND11_MODULE(_quicktok, m) {
         .def("encode_with_special", &PyTokenizer::encode_with_special, py::arg("text"),
              "Encode, turning known special-token strings into their ids.")
         .def("encode_batch", &PyTokenizer::encode_batch, py::arg("texts"), py::arg("threads") = 0,
-             "Encode many texts in parallel -> list[list[int]].")
-        .def("encode_batch_numpy", &PyTokenizer::encode_batch_numpy, py::arg("texts"), py::arg("threads") = 0,
              "Encode many texts in parallel -> (tokens uint32[], offsets int64[]); "
-             "doc i is tokens[offsets[i]:offsets[i+1]]. Fastest batch path.")
+             "doc i is tokens[offsets[i]:offsets[i+1]].")
         .def("count", &PyTokenizer::count, py::arg("text"))
         .def("decode", &PyTokenizer::decode, py::arg("ids"),
              "Decode ids -> str (utf-8).")

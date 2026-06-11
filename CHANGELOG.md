@@ -3,6 +3,15 @@
 All notable changes to quicktok. Format follows [Keep a Changelog](https://keepachangelog.com);
 versioning is [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Changed
+- **Breaking (Python):** `encode_batch()` now returns the flat
+  `(tokens uint32[], offsets int64[])` pair — formerly `encode_batch_numpy()`,
+  which was ~3.7× faster than the removed `list[list[int]]` path. Document *i*
+  is `tokens[offsets[i]:offsets[i+1]]`. The `encode_batch_numpy` name is gone.
+  The C++ `encode_batch()` is unchanged.
+
 ## [0.3.0]
 
 First release intended for general use. Adds two encodings, language bindings, and

@@ -98,14 +98,13 @@ From Python (`make bench-py`), cl100k, 10 threads, exact-checked first:
 | Python API | quicktok | tiktoken | speedup |
 |---|---:|---:|---:|
 | single-thread | 77 MB/s | 15 MB/s | **5.0×** |
-| `encode_batch` → `list[list[int]]` | 150 MB/s | 24 MB/s (batch) | 6.7× |
-| `encode_batch_numpy` → flat arrays | **550 MB/s** | 24 MB/s (batch) | **24×** |
+| `encode_batch` | **550 MB/s** | 24 MB/s (batch) | **24×** |
 
-`encode_batch` is bound by building thousands of Python lists (tiktoken's batch
-is too). `encode_batch_numpy` skips that: it returns one flat `uint32` token
-buffer plus an `int64` offsets array (`tokens[offsets[i]:offsets[i+1]]` is
-document *i*), so it keeps the full native scaling. `count_batch(enc, texts)`
-returns per-document counts the same way.
+`encode_batch` returns one flat `uint32` token buffer plus an `int64` offsets
+array (`tokens[offsets[i]:offsets[i+1]]` is document *i*) rather than building
+thousands of Python lists — the marshalling cost that caps tiktoken's own batch
+at ~1.5× its single-thread. That's how it keeps the full native scaling.
+`count_batch(enc, texts)` returns per-document counts the same way.
 </details>
 
 <details>
