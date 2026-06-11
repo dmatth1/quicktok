@@ -16,3 +16,5 @@ build/bench
 bench/corpus/
 bench/comparators/target/
 bench/comparators/Cargo.lock
+data/llama4.vocab
+data/llama4.special
