@@ -123,22 +123,45 @@ at ~1.5× its single-thread. That's how it keeps the full native scaling.
 </details>
 
 <details>
-<summary><b>x86 cross-check + size stability</b> (cl100k)</summary>
+<summary><b>x86 cross-check</b> (cl100k + o200k, The Pile / Code / Common Crawl)</summary>
 
-<br>The ordering holds on an x86 server too, exact-checked (`quicktok == bpe-openai
-== tiktoken`), across more datasets:
+<br>The same five encoders and method on an x86 server (Intel Xeon @ 2.8 GHz,
+single thread) — the three 25 MB corpora re-fetched from their sources (The Pile,
+GitHub code, multilingual Common Crawl), every output verified token-for-token
+identical before timing (throughput in **MB/s**). quicktok is shown both as its
+native C++ kernel and as the Python wheel most users `pip install`:
 
-| dataset | size | quicktok | bpe-openai | tiktoken-rs | vs bpe |
-|---|---:|---:|---:|---:|---:|
-| FineWeb | 15 MB | **80.9** | 28.2 | 12.8 | 2.87× |
-| FineWeb | 100 MB | **74.5** | 26.5 | 12.1 | 2.81× |
-| The Pile | 15 MB | **79.9** | 25.9 | 10.7 | 3.08× |
-| C4 | 15 MB | **80.1** | 26.8 | 12.6 | 2.99× |
-| SlimPajama | 15 MB | **76.4** | 25.8 | 11.8 | 2.96× |
-| Wikipedia | 15 MB | **75.1** | 26.1 | 11.8 | 2.88× |
+**cl100k_base** (GPT-3.5 / GPT-4)
 
-The 100 MB row matches the 15 MB row — the ratio is size-stable. (This particular
-x86 box is slower in absolute MB/s than the M1 above; the *ratio* is what travels.)
+| encoder | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok** (native) | **75.0** | **84.4** | **44.8** |
+| quicktok (Python) | 44.1 | 48.5 | 28.2 |
+| bpe-openai | 25.9 | 30.8 | 22.9 |
+| tiktoken-rs | 11.1 | 10.2 | 11.1 |
+| tiktoken (Python) | 10.2 | 9.1 | 9.5 |
+| TokenDagger | 7.1 | 7.6 | 7.1 |
+
+**o200k_base** (GPT-4o)
+
+| encoder | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok** (native) | **47.3** | **62.6** | **29.5** |
+| quicktok (Python) | 32.4 | 37.7 | 23.0 |
+| bpe-openai | 24.4 | 28.9 | 23.9 |
+| tiktoken-rs | 17.0 | 15.5 | 15.1 |
+| tiktoken (Python) | 14.2 | 13.3 | 13.2 |
+| TokenDagger | 6.6 | 7.3 | 6.2 |
+
+Same ordering as the M1 table — quicktok fastest in every case: the native kernel is
+**2.0–2.9× bpe-openai** and **4.7–9.3× tiktoken** on cl100k, **1.2–2.2×** and
+**2.2–4.7×** on o200k. Even through the Python binding (which carries the usual
+str→bytes marshalling cost) quicktok still beats bpe-openai in five of six cells —
+tying it only on o200k Common Crawl — and runs ~1.7–5.3× Python tiktoken. Absolute
+MB/s is lower than the M1 above (this box has a slower core); the *ratio* is what
+travels, and Common Crawl stays our weakest ratio. All five agree byte-for-byte except
+TokenDagger, which diverges by a single token on the Pile/cl100k (6,109,917 vs
+6,109,916) — a known TokenDagger edge case, not an encoder bug.
 </details>
 
 <details>

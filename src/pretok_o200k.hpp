@@ -44,26 +44,48 @@ struct UClassO {
 };
 
 // alt1: [UPPER]*[LOWER]+ at start -> end, or 0. Greedy U* then L+.
+// ASCII fast paths: for cp < 0x80, UPPER == [A-Z] and LOWER == [a-z] exactly
+// (ASCII has no Lt/Lm/Lo/M), so the SIMD case runs are the same predicate as the
+// scalar u8dec+cls loop — Unicode chars fall through to the original scalar steps.
 static inline uint32_t o_matchUL(const UClassO& U, const uint8_t* t, uint32_t start, uint32_t len) {
-    uint32_t i=start, n;
-    while (i<len) { uint32_t cp=u8dec(t,i,len,&n); if (U.isU(cp)) { i+=n; } else break; }  // UPPER* -> [start,i)
+    uint32_t i=start, n; bool sawmb=false;
+    for (;;) {                                                  // UPPER* -> [start,i)
+        i = ascii_upper_run(t, i, len);
+        if (i >= len || t[i] < 0x80) break;
+        uint32_t cp=u8dec(t,i,len,&n); if (U.isU(cp)) { i+=n; sawmb=true; } else break;
+    }
     uint32_t j=i; bool any=false;
-    while (j<len) { uint32_t cp=u8dec(t,j,len,&n); if (U.isLo(cp)) { j+=n; any=true; } else break; }  // LOWER+
+    for (;;) {                                                  // LOWER+
+        uint32_t j2 = ascii_lower_run(t, j, len); if (j2 > j) { j = j2; any = true; }
+        if (j >= len || t[j] < 0x80) break;
+        uint32_t cp=u8dec(t,j,len,&n); if (U.isLo(cp)) { j+=n; any=true; } else break;
+    }
     if (any) return j;
     // LOWER+ empty: backtrack the greedy UPPER* to the LAST LOWER-eligible (BOTH) char in
     // [start,i) — it becomes the trailing LOWER+. The whole UPPER* run is LOWER-eligible up
     // to that point, so the match ends right after it. (e.g. "亚洲AV": UPPER* grabbed 亚洲AV,
     // but 亚洲 are Lo/BOTH and AV are Lu/UPPER-only, so alt1 matches "亚洲", not "亚洲AV".)
+    // A pure-ASCII UPPER* run ([A-Z] only, sawmb=false) has no LOWER-eligible char: skip the scan.
+    if (!sawmb) return 0;
     uint32_t e=0, p=start;
     while (p<i) { uint32_t cp=u8dec(t,p,len,&n); if (U.isLo(cp)) e=p+n; p+=n; }
     return e;   // 0 if the UPPER* run has no LOWER-eligible char (alt1 truly fails -> alt2)
 }
 // alt2: [UPPER]+[LOWER]* at start -> end, or 0.
 static inline uint32_t o_matchUpL(const UClassO& U, const uint8_t* t, uint32_t start, uint32_t len) {
-    uint32_t i=start, n; bool anyU=false;
-    while (i<len) { uint32_t cp=u8dec(t,i,len,&n); if (U.isU(cp)) { i+=n; anyU=true; } else break; }
-    if (!anyU) return 0;
-    uint32_t j=i; while (j<len) { uint32_t cp=u8dec(t,j,len,&n); if (U.isLo(cp)) j+=n; else break; }
+    uint32_t i=start, n;
+    for (;;) {                                                  // UPPER+
+        i = ascii_upper_run(t, i, len);
+        if (i >= len || t[i] < 0x80) break;
+        uint32_t cp=u8dec(t,i,len,&n); if (U.isU(cp)) i+=n; else break;
+    }
+    if (i == start) return 0;
+    uint32_t j=i;
+    for (;;) {                                                  // LOWER*
+        j = ascii_lower_run(t, j, len);
+        if (j >= len || t[j] < 0x80) break;
+        uint32_t cp=u8dec(t,j,len,&n); if (U.isLo(cp)) j+=n; else break;
+    }
     return j;
 }
 // (?i:'s|'t|'re|'ve|'m|'ll|'d)? suffix after a letter match ending at e.
@@ -98,12 +120,14 @@ static inline uint32_t pretok_next_o200k(const UClassO& U, const uint8_t* t, uin
     // --- alt 4:  ?[^\s\p{L}\p{N}]+[\r\n/]* ---
     {
         uint32_t q = p; if (b==' ') q+=1; uint32_t s4=q;
+        q = ascii_punct_run(t, q, len);                                 // ASCII punct/symbol run (SIMD)
         while (q<len){ uint32_t n2; uint32_t c2=u8dec(t,q,len,&n2); if(!U.isS(c2)&&!U.isL(c2)&&!U.isN(c2)){q+=n2;} else break; }
         if (q > s4) { while (q<len && (t[q]=='\r'||t[q]=='\n'||t[q]=='/')) q+=1; return q - p; }
     }
     // --- whitespace alts (5,6,7) on the maximal \s run [p,e) ---
     {
         uint32_t e=p, lastnl=UINT32_MAX, lastlen=1;
+        uint32_t e0 = ascii_ws_run(t, e, len, &lastnl); if (e0 > e) { lastlen = 1; e = e0; }   // ASCII \s run (SIMD)
         while (e<len){ uint32_t n2; uint32_t c2=u8dec(t,e,len,&n2); if(!U.isS(c2)) break; if(c2=='\r'||c2=='\n') lastnl=e; lastlen=n2; e+=n2; }
         if (e==p) return 1;                              // not whitespace (shouldn't happen) -> 1 byte
         if (lastnl != UINT32_MAX) return lastnl+1 - p;   // alt5 \s*[\r\n]+
