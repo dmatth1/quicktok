@@ -3,9 +3,9 @@
 for the o200k_base (GPT-4o) pretokenizer, whose letter alternatives are CASE-AWARE:
   UPPER = [\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]   LOWER = [\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]
 Five classes (L, N, S, UPPER, LOWER) from the SAME `regex` engine verified ==
-tiktoken's split (pretok_o200k_test in the evolve lab).
+tiktoken's split.
 
-The pinning contract (TOKENIZER_LOG.md "unicode table provenance"): id-exactness
+The pinning contract: id-exactness
 always means matching some specific build's Unicode snapshot — tiktoken's own
 tables are whatever its fancy-regex/regex-syntax lockfile vendored. We make that
 pinning EXPLICIT (versions stamped in uniclass.bin.meta) and VERIFIABLE
@@ -94,7 +94,7 @@ def stamp(blob):
         f"cpython-unicodedata-ucd: {unicodedata.unidata_version} (informative; regex bundles its own UCD)\n"
         f"classes: L N S UPPER LOWER (o200k case-aware letter grammar) over all codepoints excl. surrogates\n"
         f"reference-chain: this engine's split == tiktoken cl100k ids, verified via the\n"
-        f"  byte-exact id oracle (gate-1 + unicode stress fixtures). Re-run `verify` after\n"
+        f"  byte-exact id oracle (unicode stress fixtures). Re-run `verify` after\n"
         f"  any regex/tiktoken upgrade; review the range diff before re-exporting.\n"
     )
 

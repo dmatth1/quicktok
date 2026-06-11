@@ -1,7 +1,6 @@
 // TRIE2 multibyte-piece encoder — its own TU on purpose. Defining (or even
 // declaring+dispatching to) this walk inside the main TU flips clang's inlining
-// of the hot ASCII path and costs ~14% on Latin (measured 2026-06-09, see
-// TOKENIZER_LOG.md). merge_piece routes pieces whose first byte is a 3-byte
+// of the hot ASCII path and costs ~14% on Latin (measured 2026-06-09). merge_piece routes pieces whose first byte is a 3-byte
 // UTF-8 lead (E0..EF) here; everything else takes the untouched v1 path.
 //
 // Compile with the SAME -D flags as the main TU (build.sh does this).

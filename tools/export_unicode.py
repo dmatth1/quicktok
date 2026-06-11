@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Export/verify Unicode class membership (\\p{L}, \\p{N}, \\s) as codepoint ranges,
-from the SAME `regex` engine gate-1 verified == tiktoken's split. The C++
+from the SAME `regex` engine, verified == tiktoken's split. The C++
 pretokenizer uses these for exact-correct splitting.
 
-The pinning contract (TOKENIZER_LOG.md "unicode table provenance"): id-exactness
+The pinning contract: id-exactness
 always means matching some specific build's Unicode snapshot — tiktoken's own
 tables are whatever its fancy-regex/regex-syntax lockfile vendored. We make that
 pinning EXPLICIT (versions stamped in uniclass.bin.meta) and VERIFIABLE
@@ -90,7 +90,7 @@ def stamp(blob):
         f"cpython-unicodedata-ucd: {unicodedata.unidata_version} (informative; regex bundles its own UCD)\n"
         f"classes: L=\\p{{L}} N=\\p{{N}} S=\\s over all codepoints 0..0x10FFFF excl. surrogates\n"
         f"reference-chain: this engine's split == tiktoken cl100k ids, verified via the\n"
-        f"  byte-exact id oracle (gate-1 + unicode stress fixtures). Re-run `verify` after\n"
+        f"  byte-exact id oracle (unicode stress fixtures). Re-run `verify` after\n"
         f"  any regex/tiktoken upgrade; review the range diff before re-exporting.\n"
     )
 
