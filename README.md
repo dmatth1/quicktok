@@ -62,21 +62,35 @@ The data files install to `share/quicktok`.
 
 ## Benchmarks
 
-Five encoders, same corpus, same vocab, same machine (Apple M1), single thread,
-and every encoder's output verified token-for-token identical before timing:
+Five encoders, same machine (Apple M1), single thread, every output verified
+token-for-token identical before timing. Three 25 MB corpora streamed from their
+real sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
+(multilingual) — across both common OpenAI encodings (throughput in **MB/s**):
 
-| encoder | The Pile (40 MB) | code (20 MB) |
-|---|---:|---:|
-| **quicktok** | **112.8 MB/s** | **149.3 MB/s** |
-| bpe-openai | 35.9 | 37.7 |
-| tiktoken-rs | 14.9 | 12.9 |
-| tiktoken (Python) | 14.0 | 12.1 |
-| TokenDagger | 10.8 | 12.2 |
+**cl100k_base** (GPT-3.5 / GPT-4)
 
-The ratio holds everywhere we've measured: **2.8–3.1× over bpe-openai** across
-FineWeb, The Pile, C4, SlimPajama, and Wikipedia on x86; **2.5–2.8×** under
-bpe-openai's own benchmark setup; **~14×** over llama.cpp on the Llama-3 vocab.
-Absolute MB/s moves with corpus and host — the ratios don't.
+| encoder | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok** | **110.2** | **132.3** | **66.5** |
+| bpe-openai | 33.9 | 39.5 | 27.2 |
+| tiktoken-rs | 15.1 | 13.6 | 12.7 |
+| tiktoken (Python) | 13.8 | 12.7 | 11.7 |
+| TokenDagger | 10.7 | 11.5 | 10.5 |
+
+**o200k_base** (GPT-4o)
+
+| encoder | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok** | **77.5** | **98.7** | **44.2** |
+| bpe-openai | 32.4 | 37.3 | 27.6 |
+| tiktoken-rs | 21.3 | 19.7 | 15.8 |
+| tiktoken (Python) | 19.6 | 18.1 | 14.9 |
+| TokenDagger | 10.3 | 11.1 | 9.2 |
+
+quicktok is fastest in every case: **2.4–3.4× bpe-openai** and **6–10× tiktoken**
+on cl100k, **1.6–2.6×** and **3–5×** on o200k (the 2× vocab narrows the gap, and
+helps tiktoken more than us). Common Crawl — the most multilingual corpus — is our
+weakest ratio. Absolute MB/s moves with corpus and host; the ordering doesn't.
 
 **Reproduce it yourself:** `make bench` (native, single-thread + parallel scaling)
 and `make bench-py` (quicktok vs tiktoken, needs `pip install tiktoken`) run on a
@@ -109,39 +123,22 @@ at ~1.5× its single-thread. That's how it keeps the full native scaling.
 </details>
 
 <details>
-<summary><b>Real-world corpora</b> (x86 server, cl100k, MB/s)</summary>
+<summary><b>x86 cross-check + size stability</b> (cl100k)</summary>
 
-<br>Each dataset streamed from the real source, exact-checked (`quicktok == bpe-openai == tiktoken` ids):
+<br>The ordering holds on an x86 server too, exact-checked (`quicktok == bpe-openai
+== tiktoken`), across more datasets:
 
-| dataset | size | quicktok | bpe-openai | tiktoken-rs | vs bpe | vs tiktoken-rs |
-|---|---:|---:|---:|---:|---:|---:|
-| FineWeb | 15 MB | **80.9** | 28.2 | 12.8 | 2.87× | 6.3× |
-| FineWeb | 100 MB | **74.5** | 26.5 | 12.1 | 2.81× | 6.2× |
-| FineWeb-Edu | 15 MB | **80.7** | 28.7 | 12.6 | 2.81× | 6.4× |
-| The Pile | 15 MB | **79.9** | 25.9 | 10.7 | 3.08× | 7.5× |
-| C4 | 15 MB | **80.1** | 26.8 | 12.6 | 2.99× | 6.3× |
-| SlimPajama | 15 MB | **76.4** | 25.8 | 11.8 | 2.96× | 6.5× |
-| Wikipedia | 15 MB | **75.1** | 26.1 | 11.8 | 2.88× | 6.4× |
-| Common Crawl | 15 MB | **45.9** | 20.2 | 9.7 | 2.28× | 4.7× |
+| dataset | size | quicktok | bpe-openai | tiktoken-rs | vs bpe |
+|---|---:|---:|---:|---:|---:|
+| FineWeb | 15 MB | **80.9** | 28.2 | 12.8 | 2.87× |
+| FineWeb | 100 MB | **74.5** | 26.5 | 12.1 | 2.81× |
+| The Pile | 15 MB | **79.9** | 25.9 | 10.7 | 3.08× |
+| C4 | 15 MB | **80.1** | 26.8 | 12.6 | 2.99× |
+| SlimPajama | 15 MB | **76.4** | 25.8 | 11.8 | 2.96× |
+| Wikipedia | 15 MB | **75.1** | 26.1 | 11.8 | 2.88× |
 
-Common Crawl is the most multilingual corpus and our weakest ratio (2.28×).
-The 100 MB row matches the 15 MB row — the ratio is size-stable.
-</details>
-
-<details>
-<summary><b>bpe-openai's own microbenchmark</b> (x86 server, synthetic text, size sweep)</summary>
-
-<br>Reproduces the reference's `performance.rs` setup exactly:
-
-| input size | quicktok | bpe-openai | tiktoken-rs | vs bpe |
-|---|---:|---:|---:|---:|
-| 10 B | **24.9** | 9.9 | 5.3 | 2.51× |
-| 100 B | **41.1** | 16.5 | 8.2 | 2.49× |
-| 1 KB | **45.9** | 18.1 | 9.0 | 2.54× |
-| 10 KB | **46.5** | 16.7 | 9.1 | 2.79× |
-
-The win is *larger* on natural text than on synthetic — the real-corpus numbers
-above are the conservative ones.
+The 100 MB row matches the 15 MB row — the ratio is size-stable. (This particular
+x86 box is slower in absolute MB/s than the M1 above; the *ratio* is what travels.)
 </details>
 
 <details>
@@ -166,8 +163,9 @@ not an encoder bug. See [Encodings](#encodings).
 (e.g. `encode_ordinary`, `encode_via_backtracking`) — no convenience-wrapper
 handicaps. Every comparison is exact-checked on the same bytes before timing.
 TokenDagger's README claims 2–4× over tiktoken, but that's on Llama-4/Mistral
-vocabs on AMD EPYC; on cl100k it lands at parity with Python tiktoken. Building
-this repo reproduces ~120–135 MB/s on the bundled M1 fixtures (`make example`).
+vocabs on AMD EPYC; on cl100k/o200k here it lands around Python tiktoken's level
+(a little below, on these corpora). Building this repo reproduces ~120–135 MB/s on
+the bundled M1 fixtures (`make example`).
 </details>
 
 ## How it's fast
