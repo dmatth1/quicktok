@@ -135,8 +135,8 @@ native C++ kernel and as the Python wheel most users `pip install`:
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** (native) | **75.0** | **84.4** | **44.8** |
-| quicktok (Python) | 44.1 | 48.5 | 28.2 |
+| **quicktok** (native) | **76.3** | **87.4** | **46.5** |
+| quicktok (Python) | 42.5 | 47.4 | 29.6 |
 | bpe-openai | 25.9 | 30.8 | 22.9 |
 | tiktoken-rs | 11.1 | 10.2 | 11.1 |
 | tiktoken (Python) | 10.2 | 9.1 | 9.5 |
@@ -146,22 +146,23 @@ native C++ kernel and as the Python wheel most users `pip install`:
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** (native) | **47.3** | **62.6** | **29.5** |
-| quicktok (Python) | 32.4 | 37.7 | 23.0 |
+| **quicktok** (native) | **60.3** | **69.0** | **36.7** |
+| quicktok (Python) | 36.6 | 41.1 | 26.7 |
 | bpe-openai | 24.4 | 28.9 | 23.9 |
 | tiktoken-rs | 17.0 | 15.5 | 15.1 |
 | tiktoken (Python) | 14.2 | 13.3 | 13.2 |
 | TokenDagger | 6.6 | 7.3 | 6.2 |
 
 Same ordering as the M1 table — quicktok fastest in every case: the native kernel is
-**2.0–2.9× bpe-openai** and **4.7–9.3× tiktoken** on cl100k, **1.2–2.2×** and
-**2.2–4.7×** on o200k. Even through the Python binding (which carries the usual
-str→bytes marshalling cost) quicktok still beats bpe-openai in five of six cells —
-tying it only on o200k Common Crawl — and runs ~1.7–5.3× Python tiktoken. Absolute
-MB/s is lower than the M1 above (this box has a slower core); the *ratio* is what
-travels, and Common Crawl stays our weakest ratio. All five agree byte-for-byte except
-TokenDagger, which diverges by a single token on the Pile/cl100k (6,109,917 vs
-6,109,916) — a known TokenDagger edge case, not an encoder bug.
+**2.0–2.9× bpe-openai** and **4.9–9.6× tiktoken** on cl100k, **1.5–2.5×** and
+**2.8–5.2×** on o200k (o200k runs at a steady ~0.79× of cl100k after the
+large-vocab work — see CHANGELOG). Even through the Python binding (which carries
+the usual str→bytes marshalling cost) quicktok beats bpe-openai in every cell and
+runs ~2–5× Python tiktoken. Absolute MB/s is lower than the M1 above (this box has
+a slower core); the *ratio* is what travels, and Common Crawl stays our weakest
+ratio. All five agree byte-for-byte except TokenDagger, which diverges by a single
+token on the Pile/cl100k (6,109,917 vs 6,109,916) — a known TokenDagger edge case,
+not an encoder bug.
 </details>
 
 <details>
