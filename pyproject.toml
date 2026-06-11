@@ -3,7 +3,7 @@ requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "quicktok"
+name = "quicktok-v1"
 version = "0.3.0"
 description = "Fast exact BPE tokenizer for OpenAI and open-model encodings (cl100k, o200k, GPT-OSS, Llama-3, Qwen)"
 readme = "README.md"

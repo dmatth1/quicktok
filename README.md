@@ -14,10 +14,10 @@ itself. cl100k, o200k, GPT-OSS, Llama-3, and Qwen all bundled. See
 
 ## Install
 
-**Python**:
+**Python** (the PyPI package is `quicktok-v1`; you still `import quicktok`):
 
 ```sh
-pip install quicktok
+pip install quicktok-v1
 ```
 
 ```python

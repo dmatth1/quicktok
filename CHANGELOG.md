@@ -60,7 +60,7 @@ a build/packaging story for downstream consumers.
 - **Parallel batch**: C++ `encode_batch()`; Python `encode_batch()` (flat token
   buffer + offsets — `tokens[offsets[i]:offsets[i+1]]` is document *i* — ~24×
   tiktoken's batch) and `count_batch()`.
-- **Python package** (`pip install quicktok`) with a tiktoken-compatible API
+- **Python package** (`pip install quicktok-v1`) with a tiktoken-compatible API
   (`get_encoding`, `encoding_for_model`, `encode`/`encode_ordinary`, `decode`, …).
 - **C ABI** (`quicktok.h`) for FFI from any language.
 - **CMake** support: `find_package(quicktok)`, FetchContent, install export.
