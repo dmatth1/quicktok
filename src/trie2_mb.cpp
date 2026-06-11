@@ -44,9 +44,11 @@ static uint32_t nm_mb(const Vocab& V, const uint8_t* text, uint32_t len) {
             }
         }
         uint64_t k = ((uint64_t)node << 16) | ((uint32_t)text[i] << 8) | text[i+1];
-        uint32_t h = (uint32_t)(k * 0x9E3779B97F4A7C15ull >> 40) & V.e2mask;
-        uint64_t key = k + 1, val = 0;
-        while (V.e2[h].key) { if (V.e2[h].key == key) { val = V.e2[h].val; break; } h = (h+1) & V.e2mask; }
+        uint64_t m = mix36(k);
+        uint32_t h = (uint32_t)(m >> V.e2tb);
+        uint64_t want = ((m & Vocab::E2_TAGMASK) << 38) | Vocab::E2_USED, val = 0;
+        for (uint64_t s; (s = V.e2[h]) != 0; h = (h+1) & V.e2mask)
+            if ((s & Vocab::E2_CMP) == want) { val = s; break; }
         if (!val) {
             if (!odd_done) {
                 uint32_t o = V.odd_lookup(node, text[i]);
@@ -54,8 +56,8 @@ static uint32_t nm_mb(const Vocab& V, const uint8_t* text, uint32_t len) {
             }
             return best;
         }
-        uint32_t b32 = (uint32_t)val; if (b32 != RANK_MAX) best = b32;
-        node = (uint32_t)(val >> 32); i += 2;
+        uint32_t b18 = (uint32_t)val & Vocab::E2BEST_NONE; if (b18 != Vocab::E2BEST_NONE) best = b18;
+        node = (uint32_t)(val >> 18) & 0xFFFFF; i += 2;
     }
     if (node && i < len && !odd_covered) {
         uint32_t o = V.odd_lookup(node, text[i]);
@@ -71,10 +73,7 @@ static uint32_t nm_mb(const Vocab& V, const uint8_t* text, uint32_t len) {
 // Halves the old u64 memo's footprint (4 MB at 2^20) and doubles entries per
 // cache line. Kept out of the hot TU so the dense cl100k codegen is untouched.
 bool Vocab::ivtp_wide(uint32_t t1, uint32_t t2) const {
-    uint64_t mk = ((uint64_t)t1 << 18) | t2;                    // 36-bit pair key
-    uint64_t m = mk ^ (mk >> 18);
-    m = (m * ((0x9E3779B97F4A7C15ull & 0xFFFFFFFFFull) | 1)) & 0xFFFFFFFFFull;
-    m ^= m >> 18;                                               // bijection done
+    uint64_t m = mix36(((uint64_t)t1 << 18) | t2);              // bijective 36-bit pair key
     uint32_t h = (uint32_t)(m >> (36 - IVBITS_W));
     uint32_t want = 0x80000000u | (((uint32_t)m & ((1u << (36 - IVBITS_W)) - 1)) << 1);
     uint32_t s = qt_relaxed_load(ivmw[h]);                      // one load

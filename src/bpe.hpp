@@ -44,11 +44,14 @@ template <class T> static inline void qt_relaxed_store(T& x, T v) { x = v; }
 static_assert(IVTAGBITS >= 0 && IVTAGBITS <= 14, "IVDENSE u16 slot: need 34-IVBITS <= 14 tag bits");
 #ifndef IVBITS_W
 // wide-id (36-bit key) memo capacity; u32 slots. Misses are expensive (ivtp_slow
-// chains), so capacity beats footprint until the memo crowds the LLC: x86 sweeps
-// best at 2^22 (16 MB, vs 33 MB L3 on the bench Xeon; 2^23 regresses). Non-x86
-// keeps 2^20 (4 MB) — same capacity as the u64 memo it replaced, half the bytes.
+// chains), so capacity beats footprint until the memo crowds the LLC: x86 swept
+// best at 2^22 when e2 was 8.4 MB, but re-sweeping after the packed-e2 halving
+// moved the joint optimum to 2^21 (8 MB; pile +5%, code +3%, cc ~-3%) — optima
+// shift whenever the rest of the hot set does; re-sweep after any footprint
+// change. Non-x86 keeps 2^20 (4 MB) — same capacity as the u64 memo it
+// replaced, half the bytes.
 #if defined(__x86_64__) || defined(_M_X64)
-#define IVBITS_W 22
+#define IVBITS_W 21
 #else
 #define IVBITS_W 20
 #endif
@@ -57,6 +60,17 @@ static_assert(36 - IVBITS_W >= 0 && 36 - IVBITS_W <= 30, "IVWIDE u32 slot: need 
 
 namespace quicktok {
 namespace detail {
+
+// bijective 36-bit mixer (self-inverse xorshift / odd multiply mod 2^36 / xorshift)
+// — shared by the wide-id validity memo and the packed e2 trie table. Because every
+// stage is invertible, index bits + tag bits reconstruct the input exactly: a tagged
+// slot can never alias a different key. (Same construction as the 34-bit IVDENSE
+// mixer, widened.)
+static inline uint64_t mix36(uint64_t k) {
+    uint64_t m = k ^ (k >> 18);
+    m = (m * ((0x9E3779B97F4A7C15ull & 0xFFFFFFFFFull) | 1)) & 0xFFFFFFFFFull;
+    return m ^ (m >> 18);
+}
 
 // odd-token side-table layout: 18-bit token field (fits both cl100k's 100,256 and
 // o200k's 199,998 ids). slot = (key+1)<<19 | hasdeeper<<18 | token.
@@ -78,8 +92,10 @@ struct Vocab {
     std::vector<uint32_t> tnode_tok;     // per trie node: token id ending here, or MAX
     std::vector<uint32_t> npm;           // next_prefix_match
     std::vector<std::pair<uint32_t,uint32_t>> split;
-    // flat open-addressing (t1<<32|t2)+1 -> merged token; 0 = empty
-    std::vector<uint64_t> plk; std::vector<uint32_t> plv; uint32_t plmask = 0;
+    // pair_lookup, flat open-addressing, ONE u64/slot: ((t1<<18|t2)+1)<<19 | rank
+    // (pair key 36 bits + rank 18 bits both fit; was split u64-key + u32-val
+    // arrays = 12 B/slot). Probed on the memo-miss path (ivtp_slow) + construction.
+    std::vector<uint64_t> plk; uint32_t plmask = 0;
     // tagged direct-mapped memo for is_valid_token_pair (adjacent pairs recur in text).
     // One u64/slot packs key+result: slot = ((mkey+1)<<1)|result, 0=empty. mkey only
     // uses 34 bits (t1,t2 < 2^17) so the <<1 never overflows. ONE load/hit (was two:
@@ -99,13 +115,34 @@ struct Vocab {
     mutable std::vector<uint32_t> ivmw;
     bool wide_ids = false;
     bool ivtp_wide(uint32_t t1, uint32_t t2) const;   // trie2_mb.cpp
-    // 2-byte-radix trie: walk consumes 2 bytes per ONE aligned-16B slot load (key +
-    // child + step-best-token packed). Odd-depth tokens via the side table otab,
-    // probed only on 2-byte miss / trailing byte. r3 resolves 3-byte UTF-8 starts
-    // (lead E0..EF) with zero probes. The byte trie (etab/tnode_tok) is used at
-    // construction and for len==1; cold during encode.
-    struct alignas(16) E2 { uint64_t key; uint64_t val; };   // key=(node<<16|b1b2)+1, 0=empty; val=child<<32|best32
-    std::vector<E2> e2; uint32_t e2mask = 0;
+    // 2-byte-radix trie: walk consumes 2 bytes per ONE 8-byte slot load. Odd-depth
+    // tokens via the side table otab, probed only on 2-byte miss / trailing byte.
+    // r3 resolves 3-byte UTF-8 starts (lead E0..EF) with zero probes. The byte trie
+    // (etab/tnode_tok) is used at construction and for len==1; cold during encode.
+    //
+    // Packed slot (the IVDENSE trick adapted to a PROBED table): the 36-bit key
+    // (node<<16|b1b2, nodes < 2^20 enforced at load) goes through the bijective
+    // mix36; the slot's INDEX holds the high log2(slots) bits and the slot STORES
+    // the low 25 bits as a tag. This halves the dominant table (16B->8B per slot:
+    // o200k 8.4->4.2 MB, cl100k 4.2->2.1 MB) and makes each probe step ONE u64
+    // load (was two: key + val) — a footprint play for the L2/L3-bound big-vocab
+    // walk at equal probe count.
+    //
+    // EXACTNESS under linear probing (subtler than the direct-mapped memo, where a
+    // collision just recomputes): a displaced entry can sit on another key's probe
+    // chain, so tag equality alone could false-match. The fixed 25-bit tag overlaps
+    // the index bits by (e2bits-11) bits, so two keys with EQUAL tags have home
+    // slots that differ by a multiple of 2^(e2bits-11). load() enforces that no
+    // circular run of occupied slots reaches that bound (doubling the table if ever
+    // violated — never fires at 0.45 load), so a probe chain can never reach a
+    // same-tag stranger: index+tag identify the key exactly, deterministically.
+    //   slot = [63]=used | [62:38]=tag25 | [37:18]=child | [17:0]=best (0x3FFFF=none)
+    static constexpr uint64_t E2_USED = 1ull << 63;
+    static constexpr uint32_t E2BEST_NONE = 0x3FFFF;
+    static constexpr uint64_t E2_TAGMASK = (1ull << 25) - 1;
+    static constexpr uint64_t E2_CMP = E2_USED | (E2_TAGMASK << 38);   // compile-time compare mask
+    std::vector<uint64_t> e2; uint32_t e2mask = 0;
+    uint32_t e2tb = 0;            // index shift = 36 - log2(slots); index = mix36(key) >> e2tb
     std::vector<uint64_t> otab; uint32_t omask = 0;          // slot=((node<<8|b)+1)<<18 | hasdeeper<<17 | tok17
     std::vector<uint32_t> r3node, r3best;
     // whole-piece encoder for pieces starting with a 3-byte UTF-8 lead (trie2_mb.cpp)
@@ -113,15 +150,17 @@ struct Vocab {
 
     size_t size() const { return n; }
     inline uint32_t token_len(uint32_t id) const { return tlen[id]; }
-    inline uint32_t pl_get(uint64_t key) const {
+    inline uint32_t pl_get(uint64_t key) const {        // key = t1<<18 | t2
         uint32_t i = (uint32_t)(key * 0x9E3779B97F4A7C15ull >> 40) & plmask;
-        while (plk[i]) { if (plk[i] == key + 1) return plv[i]; i = (i+1) & plmask; }
+        uint64_t want = (key + 1) << 19;
+        while (plk[i]) { if ((plk[i] & ~0x7FFFFull) == want) return (uint32_t)(plk[i] & 0x7FFFF); i = (i+1) & plmask; }
         return RANK_MAX;
     }
     inline void pl_put(uint64_t key, uint32_t val) {
         uint32_t i = (uint32_t)(key * 0x9E3779B97F4A7C15ull >> 40) & plmask;
-        while (plk[i]) { if (plk[i] == key + 1) { plv[i] = val; return; } i = (i+1) & plmask; }
-        plk[i] = key + 1; plv[i] = val;
+        uint64_t want = (key + 1) << 19;
+        while (plk[i]) { if ((plk[i] & ~0x7FFFFull) == want) { plk[i] = want | val; return; } i = (i+1) & plmask; }
+        plk[i] = want | val;
     }
 
     // ---- edge-slot pack/unpack ----
@@ -163,15 +202,17 @@ struct Vocab {
         uint32_t i = 2;
         while (node && i + 1 < len) {
             uint64_t k = ((uint64_t)node << 16) | ((uint32_t)text[i] << 8) | text[i+1];
-            uint32_t h = (uint32_t)(k * 0x9E3779B97F4A7C15ull >> 40) & e2mask;
-            uint64_t key = k + 1, val = 0;
-            while (e2[h].key) { if (e2[h].key == key) { val = e2[h].val; break; } h = (h+1) & e2mask; }
+            uint64_t m = mix36(k);
+            uint32_t h = (uint32_t)(m >> e2tb);
+            uint64_t want = ((m & E2_TAGMASK) << 38) | E2_USED, val = 0;
+            for (uint64_t s; (s = e2[h]) != 0; h = (h+1) & e2mask)
+                if ((s & E2_CMP) == want) { val = s; break; }
             if (!val) {  // no 2-byte step: an odd-depth token may still extend one byte
                 uint32_t o = odd_lookup(node, text[i]); if (o != RANK_MAX) best = o & OTAB_TOKMASK;
                 return best;
             }
-            uint32_t b32 = (uint32_t)val; if (b32 != RANK_MAX) best = b32;
-            node = (uint32_t)(val >> 32); i += 2;
+            uint32_t b18 = (uint32_t)val & E2BEST_NONE; if (b18 != E2BEST_NONE) best = b18;
+            node = (uint32_t)(val >> 18) & 0xFFFFF; i += 2;
         }
         if (node && i < len) { uint32_t o = odd_lookup(node, text[i]); if (o != RANK_MAX) best = o & OTAB_TOKMASK; }
         return best;
@@ -198,7 +239,7 @@ struct Vocab {
     bool ivtp_slow(uint32_t t1, uint32_t t2) const {
         uint32_t limit = RANK_MAX;
         for (;;) {
-            uint32_t c = pl_get(((uint64_t)t1 << 32) | t2);
+            uint32_t c = pl_get(((uint64_t)t1 << 18) | t2);
             if (c != RANK_MAX && c < limit) return false;
             if (t1 > t2) {
                 limit = t1; t1 = split[t1].second;
@@ -344,12 +385,20 @@ struct Vocab {
 #define E2_LOAD 0.45
 #endif
         { size_t ne2 = 0, nodd = 0;
+          // the packed e2 slot has a 20-bit child / 36-bit key budget (see layout
+          // above); every bundled vocab is well inside it (o200k: 421k nodes)
+          if (V.tnode_tok.size() >= (1u<<20))   // f is closed by now: throw directly, not fail()
+              throw std::runtime_error(std::string("quicktok: trie too large for packed e2 (max 2^20 nodes): ") + path);
           // first pass: count
           for (uint32_t id=0; id<n; id++){ uint32_t L=V.tlen[id]; if (L>=4) ne2 += (L-2)/2; if (L>=3 && (L&1)) nodd++; }
-          uint32_t cap2 = 1024; while ((double)ne2/cap2 > (E2_LOAD)) cap2 <<= 1;     // upper bound (dups counted)
           uint32_t capo = 1024; while ((double)nodd/capo > 0.45) capo <<= 1;
-          V.e2.assign(cap2, E2{0,0}); V.e2mask = cap2-1;
           V.otab.assign(capo, 0);     V.omask  = capo-1;
+          // build a construction-only FULL-KEY table first (dup-counted upper bound),
+          // then pack into the tagged final table — packing needs the original keys,
+          // which displaced slots in an open-addressing table don't preserve.
+          struct E2F { uint64_t key, val; };
+          uint32_t capf = 1024; while ((double)ne2/capf > (E2_LOAD)) capf <<= 1;
+          std::vector<E2F> ef(capf, E2F{0,0}); uint32_t fmask = capf-1;
           std::vector<uint32_t> path;
           for (uint32_t id=0; id<n; id++){
               const uint8_t* t = V.all.data() + V.tstart[id];
@@ -358,12 +407,12 @@ struct Vocab {
               for (uint32_t j=0;j<L;j++){ node = (node==0)? V.root_child[t[j]] : V.edge(node, t[j]); path[j+1]=node; }
               for (uint32_t d=2; d+2<=L; d+=2){
                   uint64_t k = ((uint64_t)path[d] << 16) | ((uint32_t)t[d] << 8) | t[d+1];
-                  uint32_t h = (uint32_t)(k * 0x9E3779B97F4A7C15ull >> 40) & V.e2mask;
-                  while (V.e2[h].key) { if (V.e2[h].key == k+1) break; h = (h+1) & V.e2mask; }
-                  if (!V.e2[h].key) {
+                  uint32_t h = (uint32_t)(k * 0x9E3779B97F4A7C15ull >> 40) & fmask;
+                  while (ef[h].key) { if (ef[h].key == k+1) break; h = (h+1) & fmask; }
+                  if (!ef[h].key) {
                       uint32_t bt2 = V.tnode_tok[path[d+2]], bt1 = V.tnode_tok[path[d+1]];
                       uint32_t best = (bt2 != RANK_MAX) ? bt2 : bt1;
-                      V.e2[h] = E2{k+1, ((uint64_t)path[d+2] << 32) | best};
+                      ef[h] = E2F{k+1, ((uint64_t)path[d+2] << 32) | best};
                   }
               }
               if (L>=3 && (L&1)) {   // token ends at odd depth: side-table entry from its even parent
@@ -373,16 +422,39 @@ struct Vocab {
                   if (!V.otab[h]) V.otab[h] = ((k+1) << OTAB_KEYSH) | id;   // hasdeeper flag OR'd in later
               }
           }
-          // ne2 over-counted duplicate edges (shared prefixes) -> rehash down to the
-          // tightest power-of-2 at <=0.45 load over the DISTINCT count (byte-trie pattern).
-          { size_t used2=0; for (auto& s : V.e2) if (s.key) used2++;
-            uint32_t want = 1024; while ((double)used2/want > (E2_LOAD)) want <<= 1;
-            if (want < V.e2mask+1) {
-                std::vector<E2> ne(want, E2{0,0}); uint32_t nm = want-1;
-                for (uint32_t i=0;i<=V.e2mask;i++) if (V.e2[i].key) {
-                    uint64_t k = V.e2[i].key - 1; uint32_t j = (uint32_t)(k*0x9E3779B97F4A7C15ull>>40)&nm;
-                    while (ne[j].key) j = (j+1)&nm; ne[j] = V.e2[i]; }
-                V.e2.swap(ne); V.e2mask = nm; } }
+          // pack into the tagged final table at the tightest power-of-2 over the
+          // DISTINCT count. Floor 2^17 slots (1 MB) so the same-tag home-slot
+          // separation 2^(e2bits-11) is >= 64; after packing, verify no circular
+          // occupied run reaches the separation bound (the exactness invariant
+          // above) — if a run ever does, double and repack.
+          { size_t used2=0; for (auto& s : ef) if (s.key) used2++;
+            uint32_t want = 1u<<17; while ((double)used2/want > (E2_LOAD)) want <<= 1;
+            for (;;) {
+                uint32_t e2bits = 0; while ((1u<<e2bits) < want) e2bits++;
+                V.e2.assign(want, 0); V.e2mask = want-1;
+                V.e2tb = 36 - e2bits;
+                for (uint32_t i=0;i<=fmask;i++) if (ef[i].key) {
+                    uint64_t k = ef[i].key - 1;
+                    uint32_t child = (uint32_t)(ef[i].val >> 32);
+                    uint32_t best32 = (uint32_t)ef[i].val;
+                    uint32_t best18 = (best32 == RANK_MAX) ? E2BEST_NONE : best32;
+                    uint64_t m = mix36(k);
+                    uint32_t j = (uint32_t)(m >> V.e2tb);
+                    while (V.e2[j]) j = (j+1) & V.e2mask;
+                    V.e2[j] = E2_USED | ((m & E2_TAGMASK) << 38) | ((uint64_t)child << 18) | best18;
+                }
+                // longest circular run of occupied slots vs the separation bound
+                uint64_t bound = 1ull << (e2bits - 11);
+                uint64_t run = 0, maxrun = 0, lead = 0; bool open = true;
+                for (uint32_t i = 0; i < want; i++) {
+                    if (V.e2[i]) { run++; if (run > maxrun) maxrun = run; }
+                    else { if (open) { lead = run; open = false; } run = 0; }
+                }
+                if (open) maxrun = want;            // fully occupied (can't happen at E2_LOAD<1)
+                else if (run + lead > maxrun) maxrun = run + lead;   // wraparound run
+                if (maxrun < bound) break;
+                want <<= 1;                         // never fires at sane loads; exactness insurance
+            } }
         }
         // next_prefix_match[id] = longest proper-prefix token. Direct byte-trie walk
         // (== next_match(t, len-1)); avoids depending on TRIE2 tables built later.
@@ -396,7 +468,7 @@ struct Vocab {
             }
             V.npm[id] = best; }
         // split_table + pair_lookup (ids in rank order)
-        uint32_t pcap = 1; while (pcap < n*2) pcap <<= 1; V.plk.assign(pcap,0); V.plv.assign(pcap,0); V.plmask = pcap-1;
+        uint32_t pcap = 1; while (pcap < n*2) pcap <<= 1; V.plk.assign(pcap,0); V.plmask = pcap-1;
 
         uint32_t icap = 1u<<IVBITS; V.ivmask = icap-1;
         V.wide_ids = (n > (1u<<17));            // ids past 17 bits: the 34-bit mixer can't pack the pair key
@@ -409,7 +481,7 @@ struct Vocab {
                 uint32_t token2 = V.find_id((const uint8_t*)t.data()+l1, (uint32_t)t.size()-l1);
                 if (token2 != RANK_MAX && token1 < id && token2 < id
                     && V.is_valid_token_pair(token1, token2)) {
-                    V.pl_put(((uint64_t)token1<<32)|token2, id);
+                    V.pl_put(((uint64_t)token1<<18)|token2, id);
                     V.split.push_back({token1, token2}); done=true; break;
                 }
                 token1 = V.npm[token1];
