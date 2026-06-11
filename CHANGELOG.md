@@ -3,15 +3,6 @@
 All notable changes to quicktok. Format follows [Keep a Changelog](https://keepachangelog.com);
 versioning is [SemVer](https://semver.org).
 
-## [Unreleased]
-
-### Changed
-- **Breaking (Python):** `encode_batch()` now returns the flat
-  `(tokens uint32[], offsets int64[])` pair — formerly `encode_batch_numpy()`,
-  which was ~3.7× faster than the removed `list[list[int]]` path. Document *i*
-  is `tokens[offsets[i]:offsets[i+1]]`. The `encode_batch_numpy` name is gone.
-  The C++ `encode_batch()` is unchanged.
-
 ## [0.3.0]
 
 First release intended for general use. Adds two encodings, language bindings, and
@@ -23,8 +14,9 @@ a build/packaging story for downstream consumers.
   Community License; see [NOTICE](NOTICE)).
 - **Special tokens**: `encode_with_special()` (tiktoken `allowed_special="all"`
   semantics) and special-id decoding; `count()` for token budgeting.
-- **Parallel batch**: `encode_batch()`; Python `encode_batch_numpy()` (flat token
-  buffer + offsets, ~24× tiktoken's batch) and `count_batch()`.
+- **Parallel batch**: C++ `encode_batch()`; Python `encode_batch()` (flat token
+  buffer + offsets — `tokens[offsets[i]:offsets[i+1]]` is document *i* — ~24×
+  tiktoken's batch) and `count_batch()`.
 - **Python package** (`pip install quicktok`) with a tiktoken-compatible API
   (`get_encoding`, `encoding_for_model`, `encode`/`encode_ordinary`, `decode`, …).
 - **C ABI** (`quicktok.h`) for FFI from any language.
