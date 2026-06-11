@@ -4,7 +4,7 @@
 Both libraries are exercised through their native APIs (quicktok.encode /
 encode_batch, tiktoken.encode_ordinary / encode_ordinary_batch), so this is the
 apples-to-apples comparison a Python consumer actually sees. Exactness is checked
-before timing. Run: make bench-py   (needs: pip install quicktok tiktoken)
+before timing. Run: make bench-py   (needs: pip install quicktok-v1 tiktoken)
 """
 import os, sys, time
 

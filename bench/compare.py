@@ -13,7 +13,7 @@ own benchmark uses.
 
 Rows and what they need:
   quicktok (native)   builds automatically (make bench-tools)
-  quicktok (Python)   pip install quicktok      (skipped if missing)
+  quicktok (Python)   pip install quicktok-v1   (skipped if missing)
   tiktoken (Python)   pip install tiktoken      (required — it's the reference)
   bpe-openai,
   tiktoken-rs         a Rust toolchain; built on first run via bench/comparators/

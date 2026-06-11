@@ -29,7 +29,7 @@ encoder on each corpus × encoding, and prints the README-format markdown tables
 | row | requirement |
 |---|---|
 | quicktok (native) | none — built automatically |
-| quicktok (Python) | `pip install quicktok` |
+| quicktok (Python) | `pip install quicktok-v1` |
 | tiktoken (Python) | `pip install tiktoken` (required — it is the reference) |
 | bpe-openai, tiktoken-rs | a Rust toolchain (`cargo`); compiled on first run from `comparators/` |
 | TokenDagger | `TOKENDAGGER_DIR` pointing at a built clone — see `tokendagger_bench.cpp` |

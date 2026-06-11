@@ -86,7 +86,7 @@ real sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
 | tiktoken (Python) | 21.6 | 19.3 | 16.3 |
 | TokenDagger | 11.0 | 11.7 | 10.2 |
 
-**Reproduce these tables:** `make bench-compare` — see [bench/README.md](bench/README.md).
+**Reproduce these tables:** `make bench-compare` — see [bench/README.md](https://github.com/dmatth1/quicktok/blob/main/bench/README.md).
 
 <details>
 <summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads)</summary>
@@ -234,7 +234,7 @@ auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, 
   `<|channel|>`, `<|return|>`, …) — ordinary text encodes identically to o200k_base.
 - **Llama-3** reproduces Meta's original **tiktoken-rank** BPE byte-for-byte
   ([Meta Llama 3 Community License](https://llama.meta.com/llama3/license/), see
-  [NOTICE](NOTICE); regenerate with `tools/export_llama3.py <tokenizer.json> data`).
+  [NOTICE](https://github.com/dmatth1/quicktok/blob/main/NOTICE); regenerate with `tools/export_llama3.py <tokenizer.json> data`).
   Hugging Face / llama.cpp infer the same vocab from a **merge list** and agree on
   ~99.9998% of tokens — the rare differences are non-Latin+symbol sequences (e.g.
   Cyrillic next to `€`) where rank order and merge order pick different splits.
@@ -251,7 +251,7 @@ auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, 
 ## Notes
 
 - Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.
-- The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](data/uniclass.bin.meta).
+- The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](https://github.com/dmatth1/quicktok/blob/main/data/uniclass.bin.meta).
 - To regenerate the data files from the references:
 
   ```sh
@@ -264,4 +264,4 @@ auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, 
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/dmatth1/quicktok/blob/main/LICENSE).
