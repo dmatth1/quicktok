@@ -186,9 +186,9 @@ static inline uint32_t pretok_next_impl(const UClass& U, const uint8_t* t, uint3
     {
         uint32_t q = p; bool pfx = false;
         bool cpL = U.isL(cp);
-        if (!cpL && cp!='\r' && cp!='\n' && !U.isN(cp)) {
-            uint32_t nb2; uint32_t c2 = u8dec(t, p+nb, len, &nb2);
-            if (p+nb < len && U.isL(c2)) { pfx = true; q = p+nb; }
+        if (!cpL && cp!='\r' && cp!='\n' && !U.isN(cp) && p+nb < len) {
+            uint32_t nb2; uint32_t c2 = u8dec(t, p+nb, len, &nb2);   // p+nb<len: in-bounds
+            if (U.isL(c2)) { pfx = true; q = p+nb; }
         }
         if (pfx || cpL) {
             if (!pfx) q = p;

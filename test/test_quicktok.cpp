@@ -123,6 +123,22 @@ int main(int argc, char** argv) {
         else printf("concurrency: OK (8 threads x 50 encodes, one shared Tokenizer, all exact)\n");
     }
 
+    // --- tight-buffer / no-OOB: encode must not read past the input (ASan catches
+    //     the alt2 prefix-probe overflow the fuzzer found). Inputs whose last piece
+    //     is a lone prefix-eligible non-letter are the trigger. ---
+    {
+        const char* edge[] = {"!", "a!", "x@", "hi?", " #", "1+", "foo*", "z\xc2", "\xe0\x80"};
+        for (auto c : edge)
+            for (auto& enc : {std::string("cl100k_base"), std::string("o200k_base")}) {
+                auto e = quicktok::Tokenizer::load_dir(data, enc);
+                size_t n = strlen(c);
+                std::vector<uint8_t> tight(c, c + n);   // no trailing slack
+                std::vector<uint32_t> ids;
+                e.encode(tight.data(), tight.size(), ids);
+            }
+        printf("no-OOB: OK (tight-buffer edge inputs, both encodings)\n");
+    }
+
     if (fails == 0) printf("PASS: both encodings exact (encode == tiktoken incl. specials, decode round-trips)\n");
     else            printf("FAIL: %d failures\n", fails);
     return fails ? 1 : 0;

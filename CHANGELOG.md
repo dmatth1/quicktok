@@ -29,6 +29,9 @@ a build/packaging story for downstream consumers.
 - Portable by default (baseline SSE2/NEON); `-march=native` is opt-in.
 
 ### Fixed
+- **Out-of-bounds read fixed** in the pretokenizer: a prefix probe could read one
+  byte past the input when the last piece was a lone non-letter (benign result, but
+  UB / crash risk on a tightly-bounded buffer). Found by the fuzzer.
 - **Lossless on invalid UTF-8.** Ill-formed multibyte sequences (e.g. truncated
   streams) no longer corrupt `encode` output — the 3-byte-char fast table is used
   only for well-formed input, ill-formed bytes take the byte-accurate path. Found
