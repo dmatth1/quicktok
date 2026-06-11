@@ -7,9 +7,11 @@ versioning is [SemVer](https://semver.org).
 
 ### Added
 - Open-model benchmark comparisons, bench-grade (M1, single thread, best-of-5,
-  three real corpora, exactness-gated): vs llama.cpp on Llama-3 (~11–13×) and vs
-  Hugging Face `tokenizers` on Qwen3 (~20–33×, per-document timing). Reproduce
-  with `bench/hf_qwen_bench.py` and `bench/llamacpp_bench.cpp`.
+  three real corpora, exactness-gated): vs llama.cpp on Llama-3 (~11–13×), vs
+  Hugging Face `tokenizers` on Qwen3 (~20–33×, per-document timing), and vs
+  TokenDagger on Llama-4 — its own headline vocab (~5.6–10×; BYO gated vocab).
+  Reproduce with `bench/hf_qwen_bench.py`, `bench/llama4_bench.py`, and
+  `bench/llamacpp_bench.cpp`.
 
 ### Known limitations
 - `qwen3` does not yet apply the NFC normalization HF's pipeline runs before

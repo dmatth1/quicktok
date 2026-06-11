@@ -143,7 +143,7 @@ known TokenDagger edge case, not an encoder bug.)
 </details>
 
 <details>
-<summary><b>Open-model encodings</b> (Apple M1: vs llama.cpp on Llama-3, vs Hugging Face tokenizers on Qwen3)</summary>
+<summary><b>Open-model encodings</b> (Apple M1: vs llama.cpp on Llama-3, vs Hugging Face tokenizers on Qwen3, vs TokenDagger on Llama-4)</summary>
 
 <br>Same corpora and method as the headline tables (single thread, best-of-5, MB/s).
 
@@ -170,8 +170,24 @@ drops it below 2.2 MB/s):
 
 quicktok's output was verified token-for-token identical to HF's on all three
 corpora, on NFC-normalized input — see the Qwen note in
-[Encodings](#encodings). Reproduce: `python bench/hf_qwen_bench.py` and
-`bench/llamacpp_bench.cpp`.
+[Encodings](#encodings).
+
+**Llama-4** — quicktok vs TokenDagger, on the vocab TokenDagger's own headline
+numbers come from (its native `CoreBPE`; both encoders verified token-for-token
+against Meta's tiktoken construction before timing; tiktoken itself shown for
+scale):
+
+| | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok** | **92.2** | **119.2** | **56.7** |
+| tiktoken | 21.1 | 19.3 | 16.5 |
+| TokenDagger | 10.5 | 11.8 | 10.1 |
+
+Meta gates the Llama-4 vocab, so it isn't bundled — this bench takes a local
+`tokenizer.model` (a TokenDagger clone happens to redistribute one).
+
+Reproduce: `python bench/hf_qwen_bench.py`, `python bench/llama4_bench.py`,
+and `bench/llamacpp_bench.cpp`.
 </details>
 
 <details>
@@ -181,7 +197,7 @@ corpora, on NFC-normalized input — see the Qwen note in
 (e.g. `encode_ordinary`, `encode_via_backtracking`) — no convenience-wrapper
 handicaps. TokenDagger's README claims 2–4× over tiktoken, but that's on
 Llama-4/Mistral vocabs on AMD EPYC; on cl100k/o200k here it lands around Python
-tiktoken's level.
+tiktoken's level, and on its own Llama-4 vocab about half of it (table above).
 </details>
 
 ## How it's fast

@@ -50,6 +50,10 @@ already gets you quicktok-vs-tiktoken on the real corpora.
   command), run it per corpus (it dumps its ids), then time quicktok with
   `build/bench_file <corpus> llama3 data`. Agreement differs from 100% by the
   known rank-vs-merges divergence (worst on multilingual text).
+- **Llama-4 vs TokenDagger**: `python bench/llama4_bench.py
+  /path/to/tokenizer.model` (Meta's gated tiktoken-format vocab — a TokenDagger
+  clone redistributes one at `src/tokenizer.model`). Reference is Meta's own
+  tiktoken construction; set `TOKENDAGGER_DIR` for the TokenDagger row.
 
 ## Method
 
