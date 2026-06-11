@@ -1,7 +1,13 @@
 quicktok bundles tokenizer vocabulary data in data/:
 
-- cl100k.vocab, o200k.vocab and the cl100k/o200k special-token + Unicode tables
-  are derived from OpenAI's tiktoken (https://github.com/openai/tiktoken, MIT).
+- cl100k.vocab, o200k.vocab, the o200k_harmony special tokens, and the cl100k/
+  o200k special-token + Unicode tables are derived from OpenAI's tiktoken
+  (https://github.com/openai/tiktoken, MIT). o200k_harmony shares o200k_base's
+  merge ranks (only its special tokens differ), so it reuses o200k.vocab.
+
+- qwen3.vocab and qwen3.special are derived from the Qwen tokenizer
+  (https://huggingface.co/Qwen), licensed Apache-2.0. Qwen2.5 and Qwen3 share
+  the same byte-level BPE; regenerate with tools/export_qwen.py if you prefer.
 
 - llama3.vocab and llama3.special are derived from Meta's Llama 3 tokenizer and
   are governed by the Meta Llama 3 Community License Agreement
@@ -9,5 +15,10 @@ quicktok bundles tokenizer vocabulary data in data/:
   interoperability, following llama.cpp's precedent of shipping the same
   byte-level BPE vocabulary. Use of the Llama 3 tokenizer is subject to that
   license; regenerate it yourself with tools/export_llama3.py if you prefer.
+
+- Llama-4 is NOT bundled. Its tokenizer is governed by the Meta Llama 4 Community
+  License (https://llama.com/llama4/license/) and is gated; supply your own vocab
+  with tools/export_llama4.py. quicktok's "llama4" encoding only adds the code
+  path (its pattern is identical to o200k_base).
 
 The quicktok source code is MIT-licensed (see LICENSE).

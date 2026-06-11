@@ -10,6 +10,12 @@ a build/packaging story for downstream consumers.
 
 ### Added
 - **o200k_base** (GPT-4o) encoding — exact vs tiktoken, bundled.
+- **o200k_harmony** (GPT-OSS) encoding — exact vs tiktoken, bundled. Shares
+  o200k_base's merge ranks; adds the harmony chat special tokens.
+- **Qwen2.5 / Qwen3** (`qwen3`) encoding — exact vs the Hugging Face tokenizer
+  (rank-order backtracking reproduces its merge list), bundled (Apache-2.0).
+- **Llama-4** (`llama4`) encoding — pretokenizer wired in (identical to o200k_base);
+  vocab is gated and not bundled (bring your own via `tools/export_llama4.py`).
 - **Llama-3** encoding — exact vs Llama-3's tiktoken-rank BPE, bundled (Meta Llama 3
   Community License; see [NOTICE](NOTICE)).
 - **Special tokens**: `encode_with_special()` (tiktoken `allowed_special="all"`

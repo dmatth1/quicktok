@@ -168,7 +168,14 @@ static inline uint32_t u8dec(const uint8_t* t, uint32_t p, uint32_t len, uint32_
 // Find ONE pretoken starting at p; returns its byte length (no emit/advance).
 // Exposed so e2e can fuse pretok with merge. (Word fast-path lives in the e2e
 // fused loop; here we go straight to the alt cascade for generality.)
-template <bool LLAMA3>
+//
+// Two axes parameterize the three cl100k-family grammars we support — letters,
+// contractions ('s 't 're 've 'm 'll 'd) and punct (alt4) are identical across
+// all three; only these differ:
+//   O200K_WS    : whitespace cascade is the o200k-style \s*[\r\n]+ | \s+(?!\S) | \s+
+//                 (Llama-3, Qwen) vs cl100k's \s+$ | \s*[\r\n] | \s+(?!\S) | \s.
+//   SINGLE_DIGIT: number alt is \p{N} (one digit per token — Qwen) vs \p{N}{1,3}.
+template <bool O200K_WS, bool SINGLE_DIGIT>
 static inline uint32_t pretok_next_impl(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
     uint8_t b = t[p];
     uint32_t nb; uint32_t cp = u8dec(t, p, len, &nb);
@@ -200,8 +207,9 @@ static inline uint32_t pretok_next_impl(const UClass& U, const uint8_t* t, uint3
             return q - p;
         }
     }
-    // --- alt 3: \p{N}{1,3}+ ---
+    // --- alt 3: \p{N}{1,3}+  (Qwen: \p{N} — exactly one digit codepoint) ---
     if (U.isN(cp)) {
+        if constexpr (SINGLE_DIGIT) return nb;   // one \p{N} codepoint = nb bytes
         uint32_t q=p, cnt=0;
         while (q<len && cnt<3) { uint32_t n2; uint32_t c2=u8dec(t,q,len,&n2); if(U.isN(c2)){q+=n2;cnt++;} else break; }
         return q - p;
@@ -219,7 +227,7 @@ static inline uint32_t pretok_next_impl(const UClass& U, const uint8_t* t, uint3
         uint32_t e0 = ascii_ws_run(t, e, len, &lastnl); if (e0 > e) { lastlen = 1; e = e0; }   // ASCII \s run (SIMD)
         while (e<len){ uint32_t n2; uint32_t c2=u8dec(t,e,len,&n2); if(!U.isS(c2)) break; if(c2=='\r'||c2=='\n') lastnl=e; lastlen=n2; e+=n2; }  // Unicode \s tail
         if (e==p) return 1;
-        if constexpr (LLAMA3) {   // llama3 whitespace alts: \s*[\r\n]+ | \s+(?!\S) | \s+
+        if constexpr (O200K_WS) {  // Llama-3 / Qwen whitespace: \s*[\r\n]+ | \s+(?!\S) | \s+
             if (lastnl != UINT32_MAX) return lastnl+1 - p;     // \s*[\r\n]+
             if (e == len)            return e - p;              // \s+(?!\S), run to EOF
             if (e - p > lastlen)     return (e-lastlen) - p;    // \s+(?!\S)
@@ -234,10 +242,13 @@ static inline uint32_t pretok_next_impl(const UClass& U, const uint8_t* t, uint3
 }
 
 static inline uint32_t pretok_next(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
-    return pretok_next_impl<false>(U, t, p, len);          // cl100k
+    return pretok_next_impl<false, false>(U, t, p, len);   // cl100k
 }
 static inline uint32_t pretok_next_llama3(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
-    return pretok_next_impl<true>(U, t, p, len);           // Llama-3 (cl100k grammar + o200k-style \s)
+    return pretok_next_impl<true, false>(U, t, p, len);    // Llama-3 (cl100k grammar + o200k-style \s)
+}
+static inline uint32_t pretok_next_qwen(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
+    return pretok_next_impl<true, true>(U, t, p, len);     // Qwen2.5/Qwen3 (o200k-style \s + single-digit \p{N})
 }
 
 template <class CB>

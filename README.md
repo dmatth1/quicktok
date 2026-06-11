@@ -1,14 +1,15 @@
 # quicktok
 
-A fast, exact BPE tokenizer for OpenAI encodings, written in C++. Token ids are
-byte-identical to [tiktoken](https://github.com/openai/tiktoken), and encoding runs
-about 3× faster than the fastest exact tokenizer we know of
+A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++.
+Token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken), and
+encoding runs about 3× faster than the fastest exact tokenizer we know of
 ([bpe-openai](https://github.com/github/rust-gems)) — 6–8× faster than tiktoken
-itself. See [benchmarks](#benchmarks).
+itself. cl100k, o200k, GPT-OSS, Llama-3, and Qwen all bundled. See
+[benchmarks](#benchmarks).
 
 - **Exact** — ids match tiktoken byte-for-byte; every benchmark is exactness-checked before timing.
 - **Drop-in** — Python wheels with a tiktoken-style API, a stable C ABI, CMake support.
-- **Self-contained** — C++20, no external dependencies; cl100k_base, o200k_base, and Llama-3 ship in the repo.
+- **Self-contained** — C++20, no external dependencies; cl100k_base, o200k_base, o200k_harmony, Llama-3, and Qwen2.5/3 ship in the repo.
 - **Thread-safe** — load once, call `encode()` from as many threads as you like.
 
 ## Install
@@ -207,30 +208,52 @@ class Tokenizer {
 
 ## Encodings
 
-**cl100k_base** (GPT-3.5/4), **o200k_base** (GPT-4o), and **Llama-3** all ship in
-the repo. o200k runs at ~80% of cl100k throughput (its vocab is twice the size) —
-still about 2× bpe-openai. Llama-3 shares cl100k's grammar and runs at full speed:
+Five encodings ship in the repo, each byte-exact vs its reference:
+
+| name | model family | reference | notes |
+|---|---|---|---|
+| `cl100k_base` | GPT-3.5 / GPT-4 | tiktoken | the default |
+| `o200k_base` | GPT-4o | tiktoken | ~80% of cl100k speed (2× vocab), still ~2× bpe-openai |
+| `o200k_harmony` | GPT-OSS (20b/120b) | tiktoken | same pattern + ranks as o200k_base, extra chat specials |
+| `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
+| `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers |
 
 ```python
-enc = quicktok.get_encoding("llama3")
+enc = quicktok.get_encoding("qwen3")          # or "o200k_harmony", "llama3", ...
 ```
-
 ```cpp
-auto tok = quicktok::Tokenizer::load_dir("data", "llama3");
+auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");
 ```
 
-The bundled `data/llama3.vocab` is derived from Meta's Llama 3 tokenizer and is
-governed by the [Meta Llama 3 Community License](https://llama.meta.com/llama3/license/)
-(see [NOTICE](NOTICE)) — redistributed for interoperability following llama.cpp's
-precedent. Regenerate it from a Hugging Face `tokenizer.json` or llama.cpp GGUF
-with `python tools/export_llama3.py <tokenizer.json> data` if you prefer.
+**Qwen2.5 / Qwen3** share one byte-level BPE; quicktok reproduces the Hugging Face
+tokenizer's merge-list output byte-for-byte by rank order (verified token-for-token
+on a multilingual corpus). Apache-2.0 — `tools/export_qwen.py --download` regenerates
+the vocab.
 
-**Llama-3 exactness:** quicktok reproduces Llama-3's original **tiktoken-rank**
-BPE byte-for-byte. Hugging Face and llama.cpp infer the same vocab via a **merge
-list**; the two agree on ~99.9998% of tokens, differing only on rare
-non-Latin+symbol sequences (e.g. Cyrillic next to `€`), where the rank order and
-the merge order pick different splits. Neither is "wrong"; quicktok matches
-Meta's original tiktoken-format tokenizer.
+**o200k_harmony** (GPT-OSS) is o200k_base with the harmony chat special tokens
+(`<|start|>`, `<|channel|>`, `<|return|>`, `<|call|>`, …); it reuses o200k's merge
+ranks, so encoding ordinary text is identical to o200k_base.
+
+**Llama-3** is derived from Meta's Llama 3 tokenizer, governed by the
+[Meta Llama 3 Community License](https://llama.meta.com/llama3/license/) (see
+[NOTICE](NOTICE)) — redistributed for interoperability following llama.cpp's
+precedent. Regenerate from a Hugging Face `tokenizer.json` or llama.cpp GGUF with
+`python tools/export_llama3.py <tokenizer.json> data`. quicktok reproduces Llama-3's
+original **tiktoken-rank** BPE byte-for-byte; Hugging Face / llama.cpp infer the
+same vocab via a **merge list** and agree on ~99.9998% of tokens, differing only on
+rare non-Latin+symbol sequences (e.g. Cyrillic next to `€`) where rank order and
+merge order pick different splits.
+
+**Llama-4** has the same pretokenizer as o200k_base, so its encoding is wired in —
+but Meta's Llama-4 vocab is gated and **not bundled**. Supply your own and quicktok
+encodes it exactly:
+
+```sh
+python tools/export_llama4.py <tokenizer.model> data   # from Meta's gated tokenizer
+```
+```python
+enc = quicktok.get_encoding("llama4", "data")
+```
 
 ## Notes
 
@@ -239,10 +262,11 @@ Meta's original tiktoken-format tokenizer.
 - To regenerate the data files from the references:
 
   ```sh
-  pip install tiktoken regex
-  python tools/export_fixtures.py   # data/cl100k.vocab from tiktoken
-  python tools/export_unicode.py    # data/uniclass.bin + version stamp
-  python tools/gen_vectors.py       # test/vectors.bin
+  pip install tiktoken regex tokenizers
+  python tools/export_fixtures.py        # cl100k/o200k/o200k_harmony from tiktoken
+  python tools/export_qwen.py --download  # data/qwen3.vocab (Apache-2.0)
+  python tools/export_unicode.py         # data/uniclass.bin + version stamp
+  python tools/gen_vectors.py            # test vectors (tiktoken encodings)
   ```
 
 ## License

@@ -48,10 +48,25 @@ def _llama3(json_path):
                   lambda s: enc.encode(s, allowed_special="all"))
 
 
+def _qwen3(json_path):
+    """Reference = the Hugging Face tokenizer itself (the merge-list BPE quicktok
+    reproduces by rank). Needs: pip install tokenizers."""
+    from tokenizers import Tokenizer
+    hf = Tokenizer.from_file(json_path)
+    enc_ord = lambda s: hf.encode(s, add_special_tokens=False).ids
+    QWEN_SP = ["<|im_start|>", "before<|im_end|>after", "a<|endoftext|><|im_start|>b",
+               "no specials here", "<think>reasoning</think>"]
+    write_vectors(os.path.join(TESTDIR, "vectors_qwen3.bin"), CASES, enc_ord)
+    write_vectors(os.path.join(TESTDIR, "vectors_qwen3_special.bin"), QWEN_SP, enc_ord)
+
+
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--llama3":
         _llama3(sys.argv[2]); return
-    for name, stem in [("cl100k_base", "vectors"), ("o200k_base", "vectors_o200k")]:
+    if len(sys.argv) > 2 and sys.argv[1] == "--qwen3":
+        _qwen3(sys.argv[2]); return
+    for name, stem in [("cl100k_base", "vectors"), ("o200k_base", "vectors_o200k"),
+                       ("o200k_harmony", "vectors_o200k_harmony")]:
         enc = tiktoken.get_encoding(name)
         write_vectors(os.path.join(TESTDIR, stem + ".bin"), CASES, enc.encode_ordinary)
         write_vectors(os.path.join(TESTDIR, stem + "_special.bin"), SPECIAL_CASES,

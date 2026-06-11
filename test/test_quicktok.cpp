@@ -64,6 +64,15 @@ int main(int argc, char** argv) {
         if (!fails) printf("o200k_base: vectors + specials exact\n");
     }
 
+    // --- o200k_harmony (GPT-OSS): reuses o200k.vocab + scanner, 1091 specials ---
+    {
+        auto h = quicktok::Tokenizer::load_dir(data, "o200k_harmony");
+        printf("o200k_harmony: vocab=%zu\n", h.vocab_size());
+        fails += run_vectors(h, "test/vectors_o200k_harmony.bin", false);
+        fails += run_vectors(h, "test/vectors_o200k_harmony_special.bin", true);
+        if (!fails) printf("o200k_harmony: vectors + specials exact\n");
+    }
+
     // --- Llama-3 ---
     {
         auto l3 = quicktok::Tokenizer::load_dir(data, "llama3");
@@ -71,6 +80,31 @@ int main(int argc, char** argv) {
         fails += run_vectors(l3, "test/vectors_llama3.bin", false);
         fails += run_vectors(l3, "test/vectors_llama3_special.bin", true);
         if (!fails) printf("llama3: vectors + specials exact\n");
+    }
+
+    // --- Qwen2.5/Qwen3: cl100k grammar + o200k whitespace + single-digit \p{N};
+    //     rank-BPE reproduces the HF merge-list tokenizer byte-exactly ---
+    {
+        auto qw = quicktok::Tokenizer::load_dir(data, "qwen3");
+        printf("qwen3: vocab=%zu\n", qw.vocab_size());
+        fails += run_vectors(qw, "test/vectors_qwen3.bin", false);
+        fails += run_vectors(qw, "test/vectors_qwen3_special.bin", true);
+        if (!fails) printf("qwen3: vectors + specials exact\n");
+    }
+
+    // --- Llama-4 (optional): vocab is gated and not shipped. If a user has run
+    //     tools/export_llama4.py, exercise the load + a round-trip; else skip. ---
+    {
+        try {
+            auto l4 = quicktok::Tokenizer::load_dir(data, "llama4");
+            printf("llama4: vocab=%zu (BYO vocab present)\n", l4.vocab_size());
+            auto ids = l4.encode("Hello, Llama 4! 123 日本語");
+            if (l4.decode(ids) != "Hello, Llama 4! 123 日本語") {
+                fails++; printf("  FAIL: llama4 round-trip mismatch\n");
+            } else printf("llama4: load + round-trip OK\n");
+        } catch (const std::exception&) {
+            printf("llama4: skipped (no bundled vocab — gated; see export_llama4.py)\n");
+        }
     }
 
     // --- error handling: loads must THROW (never exit/crash) on bad inputs ---

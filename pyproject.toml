@@ -5,13 +5,13 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "quicktok"
 version = "0.3.0"
-description = "Fast exact BPE tokenizer for OpenAI encodings (cl100k_base, o200k_base)"
+description = "Fast exact BPE tokenizer for OpenAI and open-model encodings (cl100k, o200k, GPT-OSS, Llama-3, Qwen)"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "dmatth1" }]
 dependencies = ["numpy>=1.21"]
-keywords = ["tokenizer", "bpe", "tiktoken", "cl100k", "o200k", "gpt"]
+keywords = ["tokenizer", "bpe", "tiktoken", "cl100k", "o200k", "gpt", "qwen", "llama", "gpt-oss", "harmony"]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: C++",

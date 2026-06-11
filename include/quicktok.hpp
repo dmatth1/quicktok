@@ -11,10 +11,11 @@ namespace quicktok {
 
 class Tokenizer {
 public:
-    // encoding: "cl100k_base" (GPT-3.5/4) or "o200k_base" (GPT-4o).
-    // dir must contain <stem>.vocab, the matching uniclass file, and (optionally)
-    // <stem>.special — see data/ in the repo. Throws std::runtime_error on
-    // missing/corrupt files or unknown encoding names.
+    // encoding: "cl100k_base" (GPT-3.5/4), "o200k_base" (GPT-4o),
+    // "o200k_harmony" (GPT-OSS), "llama3", "qwen3" (Qwen2.5/Qwen3), or "llama4"
+    // (bring-your-own gated vocab — see README). dir must contain <stem>.vocab,
+    // the matching uniclass file, and (optionally) <stem>.special — see data/ in
+    // the repo. Throws std::runtime_error on missing/corrupt files or unknown names.
     static Tokenizer load_dir(const std::string& dir, const std::string& encoding = "cl100k_base");
     // explicit paths (cl100k-pattern encodings only; prefer load_dir)
     static Tokenizer load(const std::string& vocab_path, const std::string& uniclass_path);

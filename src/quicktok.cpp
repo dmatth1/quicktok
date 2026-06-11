@@ -14,9 +14,10 @@ using detail::UClassO;
 
 struct Tokenizer::Impl {
     Vocab V;
-    std::string name;                 // "cl100k_base" | "o200k_base"
-    bool o200k = false;
-    bool llama3 = false;
+    std::string name;                 // cl100k_base | o200k_base | o200k_harmony | llama3 | llama4 | qwen3
+    bool o200k = false;               // use the o200k pretok scanner (o200k_base, o200k_harmony, Llama-4)
+    bool llama3 = false;              // cl100k grammar + o200k-style whitespace
+    bool qwen = false;                // Llama-3 whitespace + single-digit \p{N} (Qwen2.5/Qwen3)
     UClass U;                         // cl100k-pattern classes (L/N/S)
     UClassO UO;                       // o200k-pattern classes (L/N/S/UPPER/LOWER)
     std::vector<std::pair<std::string, uint32_t>> specials;   // sorted by id
@@ -35,7 +36,7 @@ static void load_specials(const std::string& path, std::vector<std::pair<std::st
         throw std::runtime_error("quicktok: bad special-tokens file: " + path);
     };
     uint32_t n; if (fread(&n, 4, 1, f) != 1) fail();
-    if (n > 1024) fail();
+    if (n > 4096) fail();   // o200k_harmony ships 1091 specials (200000-range reserved block)
     for (uint32_t i = 0; i < n; i++) {
         uint32_t id = 0; uint16_t len = 0;
         if (fread(&id, 4, 1, f) != 1 || fread(&len, 2, 1, f) != 1) fail();
@@ -66,6 +67,22 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
         t.impl->UO = UClassO::load((dir + "/uniclass_o200k.bin").c_str());
         t.impl->o200k = true;
         load_specials(dir + "/o200k.special", t.impl->specials);
+    } else if (encoding == "o200k_harmony") {
+        // GPT-OSS harmony: identical pattern AND merge ranks to o200k_base (so it
+        // reuses o200k.vocab + the o200k scanner) — only the special tokens differ.
+        t.impl->V = Vocab::load((dir + "/o200k.vocab").c_str());
+        t.impl->UO = UClassO::load((dir + "/uniclass_o200k.bin").c_str());
+        t.impl->o200k = true;
+        load_specials(dir + "/o200k_harmony.special", t.impl->specials);
+    } else if (encoding == "llama4") {
+        // Llama-4: pat_str is byte-identical to o200k_base, so it reuses the o200k
+        // scanner; only the trained vocab differs. The vocab is gated (Meta Llama 4
+        // Community License) and not redistributed here — supply llama4.vocab via
+        // tools/export_llama4.py. See README.
+        t.impl->V = Vocab::load((dir + "/llama4.vocab").c_str());
+        t.impl->UO = UClassO::load((dir + "/uniclass_o200k.bin").c_str());
+        t.impl->o200k = true;
+        load_specials(dir + "/llama4.special", t.impl->specials);
     } else if (encoding == "llama3") {
         // Llama-3: cl100k letter/number/punct grammar + o200k-style whitespace,
         // so it reuses the cl100k L/N/S table (uniclass.bin).
@@ -73,9 +90,17 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
         t.impl->U = UClass::load((dir + "/uniclass.bin").c_str());
         t.impl->llama3 = true;
         load_specials(dir + "/llama3.special", t.impl->specials);
+    } else if (encoding == "qwen3" || encoding == "qwen2.5" || encoding == "qwen") {
+        // Qwen2.5/Qwen3 share one byte-BPE: cl100k letters/contractions/punct +
+        // o200k-style whitespace + single-digit \p{N}. Same L/N/S table as cl100k.
+        // tiktoken-rank backtracking reproduces its merge-list output byte-exactly.
+        t.impl->V = Vocab::load((dir + "/qwen3.vocab").c_str());
+        t.impl->U = UClass::load((dir + "/uniclass.bin").c_str());
+        t.impl->qwen = true;
+        load_specials(dir + "/qwen3.special", t.impl->specials);
     } else {
         throw std::runtime_error("quicktok: unknown encoding: " + encoding +
-                                 " (supported: cl100k_base, o200k_base, llama3)");
+            " (supported: cl100k_base, o200k_base, o200k_harmony, llama3, llama4, qwen3)");
     }
     t.impl->name = encoding;
     return t;
@@ -114,11 +139,11 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
         }
         return;
     }
-    // cl100k / Llama-3: fused pretok+merge loop. The ASCII-word fast path is
-    // identical for both (same letter grammar); only the whitespace cascade in
-    // pretok_next differs (Llama-3 uses the o200k-style alts).
+    // cl100k / Llama-3 / Qwen: fused pretok+merge loop. The ASCII-word fast path is
+    // identical for all three (same letter grammar); only the alt cascade in
+    // pretok_next differs (whitespace style, and Qwen's single-digit numbers).
     const UClass& U = impl->U;
-    const bool l3 = impl->llama3;
+    const bool l3 = impl->llama3, qw = impl->qwen;
     while (p < L) {
         uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
         if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {       // ASCII word
@@ -131,7 +156,8 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
                 p = we; continue;
             }
         }
-        uint32_t l = l3 ? detail::pretok_next_llama3(U, t, p, L)
+        uint32_t l = qw ? detail::pretok_next_qwen(U, t, p, L)
+                   : l3 ? detail::pretok_next_llama3(U, t, p, L)
                         : detail::pretok_next(U, t, p, L);
         merge_piece(V, t + p, l, out); p += l;
     }
