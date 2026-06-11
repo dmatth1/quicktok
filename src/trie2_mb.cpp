@@ -21,7 +21,13 @@ static uint32_t nm_mb(const Vocab& V, const uint8_t* text, uint32_t len) {
     if (len == 0) return RANK_MAX;
     if (len == 1) { uint32_t n = V.root_child[text[0]]; return n ? V.tnode_tok[n] : RANK_MAX; }
     uint32_t node, best, i = 2; bool odd_covered = false;
-    if (text[0] >= 0xE0 && text[0] < 0xF0 && len >= 3) {
+    // r3 indexes by the codepoint of a 3-byte UTF-8 char (continuation bits masked),
+    // so it is valid ONLY for well-formed sequences. For ill-formed bytes (e.g. a
+    // truncated stream) the masked index would alias a *different* token, making
+    // encode lossy — so require valid continuations and otherwise take the
+    // byte-accurate r2 path. (The dominant case, real CJK text, is well-formed.)
+    if (text[0] >= 0xE0 && text[0] < 0xF0 && len >= 3
+        && (text[1] & 0xC0) == 0x80 && (text[2] & 0xC0) == 0x80) {
         uint32_t i3 = (((uint32_t)text[0] & 0xF) << 12) | (((uint32_t)text[1] & 0x3F) << 6) | ((uint32_t)text[2] & 0x3F);
         node = V.r3node[i3]; best = V.r3best[i3]; odd_covered = true;   // depth<=3 known, 0 probes
     } else {

@@ -84,11 +84,19 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
 size_t Tokenizer::vocab_size() const { return impl->V.size(); }
 const std::string& Tokenizer::encoding() const { return impl->name; }
 
-// pieces starting with a 3-byte UTF-8 lead take the multibyte-optimized encoder
-// (own TU; see src/bpe.hpp for why the dispatch lives at the piece level).
+static inline bool is_utf8_cont(uint8_t b) { return (b & 0xC0) == 0x80; }
+
+// pieces starting with a *valid* 3-byte UTF-8 char take the multibyte-optimized
+// encoder (own TU; see src/bpe.hpp for why the dispatch lives at the piece level).
+// The mb path's r3 bootstrap masks the continuation bytes (assumes well-formed
+// UTF-8), so an ill-formed 3-byte-lead sequence must fall through to the byte-
+// accurate regular path — otherwise encode would be lossy on invalid UTF-8.
 static inline void merge_piece(const Vocab& V, const uint8_t* piece, size_t len,
                                std::vector<uint32_t>& out) {
-    if (len >= 3 && piece[0] >= 0xE0 && piece[0] < 0xF0) { V.encode_mb(piece, (uint32_t)len, out); return; }
+    if (len >= 3 && piece[0] >= 0xE0 && piece[0] < 0xF0
+        && is_utf8_cont(piece[1]) && is_utf8_cont(piece[2])) {
+        V.encode_mb(piece, (uint32_t)len, out); return;
+    }
     V.encode(piece, (uint32_t)len, out);
 }
 
