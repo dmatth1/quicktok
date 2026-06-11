@@ -189,7 +189,7 @@ Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-stru
 ```cpp
 namespace quicktok {
 class Tokenizer {
-    // encoding: "cl100k_base" (default), "o200k_base", or "llama3"
+    // encoding: "cl100k_base" (default), "o200k_base", "o200k_harmony", "llama3", "qwen3", "llama4"
     static Tokenizer load_dir(const std::string& dir, const std::string& encoding = "cl100k_base");
 
     std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
