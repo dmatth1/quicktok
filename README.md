@@ -222,42 +222,37 @@ Five encodings ship in the repo, each byte-exact vs its reference:
 | `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
 | `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers |
 
+Load one by encoding name. The Python wheel bundles all the data files, so a name
+is all you need; in C++ you also point at the directory holding them (`data/` in
+this repo, or wherever `make install` put them):
+
 ```python
-enc = quicktok.get_encoding("qwen3")          # or "o200k_harmony", "llama3", ...
+enc = quicktok.get_encoding("qwen3")                        # Python: data ships in the wheel
 ```
 ```cpp
-auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");
+auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, explicit data dir
 ```
 
-**Qwen2.5 / Qwen3** share one byte-level BPE; quicktok reproduces the Hugging Face
-tokenizer's merge-list output byte-for-byte by rank order (verified token-for-token
-on a multilingual corpus). Apache-2.0 — `tools/export_qwen.py --download` regenerates
-the vocab.
+- **Qwen2.5 / Qwen3** share one byte-level BPE; quicktok reproduces the Hugging
+  Face tokenizer byte-for-byte. Apache-2.0; regenerate with
+  `tools/export_qwen.py --download`.
+- **o200k_harmony** is o200k_base plus the harmony chat specials (`<|start|>`,
+  `<|channel|>`, `<|return|>`, …) — ordinary text encodes identically to o200k_base.
+- **Llama-3** reproduces Meta's original **tiktoken-rank** BPE byte-for-byte
+  ([Meta Llama 3 Community License](https://llama.meta.com/llama3/license/), see
+  [NOTICE](NOTICE); regenerate with `tools/export_llama3.py <tokenizer.json> data`).
+  Hugging Face / llama.cpp infer the same vocab from a **merge list** and agree on
+  ~99.9998% of tokens — the rare differences are non-Latin+symbol sequences (e.g.
+  Cyrillic next to `€`) where rank order and merge order pick different splits.
+- **Llama-4** uses the same pretokenizer as o200k_base, so the code path ships —
+  but Meta's vocab is gated and **not bundled**. Export your own, then load it:
 
-**o200k_harmony** (GPT-OSS) is o200k_base with the harmony chat special tokens
-(`<|start|>`, `<|channel|>`, `<|return|>`, `<|call|>`, …); it reuses o200k's merge
-ranks, so encoding ordinary text is identical to o200k_base.
-
-**Llama-3** is derived from Meta's Llama 3 tokenizer, governed by the
-[Meta Llama 3 Community License](https://llama.meta.com/llama3/license/) (see
-[NOTICE](NOTICE)) — redistributed for interoperability following llama.cpp's
-precedent. Regenerate from a Hugging Face `tokenizer.json` or llama.cpp GGUF with
-`python tools/export_llama3.py <tokenizer.json> data`. quicktok reproduces Llama-3's
-original **tiktoken-rank** BPE byte-for-byte; Hugging Face / llama.cpp infer the
-same vocab via a **merge list** and agree on ~99.9998% of tokens, differing only on
-rare non-Latin+symbol sequences (e.g. Cyrillic next to `€`) where rank order and
-merge order pick different splits.
-
-**Llama-4** has the same pretokenizer as o200k_base, so its encoding is wired in —
-but Meta's Llama-4 vocab is gated and **not bundled**. Supply your own and quicktok
-encodes it exactly:
-
-```sh
-python tools/export_llama4.py <tokenizer.model> data   # from Meta's gated tokenizer
-```
-```python
-enc = quicktok.get_encoding("llama4", "data")
-```
+  ```sh
+  python tools/export_llama4.py <tokenizer.model> data
+  ```
+  ```python
+  enc = quicktok.get_encoding("llama4", "data")
+  ```
 
 ## Notes
 
