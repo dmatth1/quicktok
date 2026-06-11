@@ -76,7 +76,7 @@ private:
 };
 
 PYBIND11_MODULE(_quicktok, m) {
-    m.attr("__version__") = "0.3.0";
+    m.attr("__version__") = "0.3.1";
     m.def("_set_datadir", [](const std::string& d){ g_datadir = d; });
 
     py::class_<PyTokenizer>(m, "Tokenizer")

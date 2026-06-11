@@ -40,6 +40,17 @@ versioning is [SemVer](https://semver.org).
   Unicode edge inputs. ARM is functionally identical but unmeasured (scalar
   fallbacks).
 
+## [0.3.1]
+
+Packaging and docs only — no code, API, or tokenization changes.
+
+### Fixed
+- The wheel now bundles **NOTICE** (`license-files`), so the attribution for the
+  redistributed tiktoken (OpenAI) and Llama-3 (Meta) vocab data travels with the
+  package.
+- README links are absolute, so they resolve on the PyPI project page; stale
+  package-name references corrected.
+
 ## [0.3.0]
 
 First release intended for general use. Adds two encodings, language bindings, and
