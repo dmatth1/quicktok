@@ -1,11 +1,10 @@
 # quicktok
 
 A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++.
-Token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken), and
-encoding runs about 3× faster than the fastest exact tokenizer we know of
-([bpe-openai](https://github.com/github/rust-gems)) — 6–8× faster than tiktoken
-itself. cl100k, o200k, GPT-OSS, Llama-3, and Qwen all bundled. See
-[benchmarks](#benchmarks).
+Token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken);
+encoding runs 2–3.5× faster than the fastest exact tokenizer we know of
+([bpe-openai](https://github.com/github/rust-gems)) and 4–11× faster than tiktoken
+itself. See [benchmarks](#benchmarks).
 
 - **Exact** — ids match tiktoken byte-for-byte; every benchmark is exactness-checked before timing.
 - **Drop-in** — Python wheels with a tiktoken-style API, a stable C ABI, CMake support.
@@ -138,10 +137,9 @@ Python wheel:
 | tiktoken (Python) | 14.2 | 13.3 | 13.2 |
 | TokenDagger | 6.6 | 7.3 | 6.2 |
 
-Same ordering as the M1 tables; even through the Python binding quicktok beats
-bpe-openai in every cell and runs 2–5× Python tiktoken. (One footnote: TokenDagger
-diverges from the other four by a single token on Pile/cl100k — a known TokenDagger
-edge case, not an encoder bug.)
+Same ordering as the M1 tables, the Python wheel included. (One footnote:
+TokenDagger diverges from the other four by a single token on Pile/cl100k — a
+known TokenDagger edge case, not an encoder bug.)
 </details>
 
 <details>
@@ -164,11 +162,9 @@ not an encoder bug. See [Encodings](#encodings).
 
 <br>Every reference is called through the same raw API its own benchmark uses
 (e.g. `encode_ordinary`, `encode_via_backtracking`) — no convenience-wrapper
-handicaps. Every comparison is exact-checked on the same bytes before timing.
-TokenDagger's README claims 2–4× over tiktoken, but that's on Llama-4/Mistral
-vocabs on AMD EPYC; on cl100k/o200k here it lands around Python tiktoken's level
-(a little below, on these corpora). Building this repo reproduces ~120–135 MB/s on
-the bundled M1 fixtures (`make example`).
+handicaps. TokenDagger's README claims 2–4× over tiktoken, but that's on
+Llama-4/Mistral vocabs on AMD EPYC; on cl100k/o200k here it lands around Python
+tiktoken's level.
 </details>
 
 ## How it's fast
@@ -215,7 +211,7 @@ Five encodings ship in the repo, each byte-exact vs its reference:
 | name | model family | reference | notes |
 |---|---|---|---|
 | `cl100k_base` | GPT-3.5 / GPT-4 | tiktoken | the default |
-| `o200k_base` | GPT-4o | tiktoken | ~85% of cl100k speed (2× vocab), 2–2.9× bpe-openai |
+| `o200k_base` | GPT-4o | tiktoken | ~85% of cl100k speed (2× vocab) |
 | `o200k_harmony` | GPT-OSS (20b/120b) | tiktoken | same pattern + ranks as o200k_base, extra chat specials |
 | `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
 | `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers |
