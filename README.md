@@ -1,15 +1,10 @@
 # quicktok
 
-A fast, exact BPE tokenizer for OpenAI encodings — `cl100k_base` (GPT-3.5 / GPT-4) and `o200k_base` (GPT-4o) — written in C++.
-
-- **Exact** — token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken). The reference is the spec, and the test suite enforces it.
-- **Fast** — about **3×** the fastest exact tokenizer we know of ([bpe-openai](https://github.com/github/rust-gems)), **6–8×** tiktoken, **10×+** [TokenDagger](https://github.com/M4THYOU/TokenDagger) and llama.cpp. Single-threaded, measured against each project's own API ([benchmarks](#benchmarks)).
-- **Drop-in** — Python wheels (`pip install quicktok`), a tiktoken-compatible API, a C ABI, and CMake/`find_package` support. C++20 core, no external dependencies.
-- **Thread-safe** — load once, call `encode()` from as many threads as you like.
+A fast, exact BPE tokenizer for OpenAI encodings written in C++. **6–8×** faster than tiktoken. See ([benchmarks](#benchmarks)).
 
 ## Install
 
-**Python** (5× faster than tiktoken from Python, single-thread, drop-in-shaped):
+**Python**:
 
 ```sh
 pip install quicktok
@@ -56,6 +51,12 @@ auto batch = tok.encode_batch(texts);                       // parallel
 ```
 
 Link against `build/libquicktok.a`, or `make install` and use `pkg-config --cflags --libs quicktok`. The data files install to `share/quicktok`.
+
+## Details
+- **Exact** — token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken).
+- **Fast** — about **3×** the fastest exact tokenizer we know of ([bpe-openai](https://github.com/github/rust-gems)), **6–8×** tiktoken, **10×+** [TokenDagger](https://github.com/M4THYOU/TokenDagger) and llama.cpp.
+- **Drop-in** — Python wheels (`pip install quicktok`), a tiktoken-compatible API, a C ABI, and CMake/`find_package` support. C++20 core, no external dependencies.
+- **Thread-safe** — load once, call `encode()` from as many threads as you like.
 
 ## Benchmarks
 
@@ -231,3 +232,4 @@ python tools/gen_vectors.py       # test/vectors.bin
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
