@@ -87,11 +87,6 @@ real sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
 | tiktoken (Python) | 21.6 | 19.3 | 16.3 |
 | TokenDagger | 11.0 | 11.7 | 10.2 |
 
-quicktok is fastest in every case: **2.6–3.5× bpe-openai** and **6–11× tiktoken**
-on cl100k, **2.0–2.9×** and **4–6×** on o200k (the 2× vocab narrows the gap, and
-helps tiktoken more than us). Common Crawl — the most multilingual corpus — is our
-weakest ratio. Absolute MB/s moves with corpus and host; the ordering doesn't.
-
 **Reproduce it yourself:** `make bench` (native, single-thread + parallel scaling)
 and `make bench-py` (quicktok vs tiktoken, needs `pip install tiktoken`) run on a
 bundled 1 MB public-domain corpus — no network, no setup.
