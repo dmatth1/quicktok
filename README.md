@@ -119,11 +119,9 @@ From Python (`make bench-py`), cl100k, 10 threads:
 <details>
 <summary><b>x86 cross-check</b> (cl100k + o200k, The Pile / Code / Common Crawl)</summary>
 
-<br>The same five encoders and method on an x86 server (Intel Xeon @ 2.8 GHz,
-single thread) — the three 25 MB corpora re-fetched from their sources (The Pile,
-GitHub code, multilingual Common Crawl), every output verified token-for-token
-identical before timing (throughput in **MB/s**). quicktok is shown both as its
-native C++ kernel and as the Python wheel most users `pip install`:
+<br>Same encoders, corpora, and method on an x86 server (Intel Xeon @ 2.8 GHz,
+single thread, MB/s). quicktok is shown both as the native C++ kernel and as the
+Python wheel:
 
 **cl100k_base** (GPT-3.5 / GPT-4)
 
@@ -147,16 +145,10 @@ native C++ kernel and as the Python wheel most users `pip install`:
 | tiktoken (Python) | 14.2 | 13.3 | 13.2 |
 | TokenDagger | 6.6 | 7.3 | 6.2 |
 
-Same ordering as the M1 table — quicktok fastest in every case: the native kernel is
-**2.0–2.9× bpe-openai** and **4.9–9.6× tiktoken** on cl100k, **1.5–2.5×** and
-**2.8–5.2×** on o200k (o200k runs at a steady ~0.79× of cl100k after the
-large-vocab work — see CHANGELOG). Even through the Python binding (which carries
-the usual str→bytes marshalling cost) quicktok beats bpe-openai in every cell and
-runs ~2–5× Python tiktoken. Absolute MB/s is lower than the M1 above (this box has
-a slower core); the *ratio* is what travels, and Common Crawl stays our weakest
-ratio. All five agree byte-for-byte except TokenDagger, which diverges by a single
-token on the Pile/cl100k (6,109,917 vs 6,109,916) — a known TokenDagger edge case,
-not an encoder bug.
+Same ordering as the M1 tables; even through the Python binding quicktok beats
+bpe-openai in every cell and runs 2–5× Python tiktoken. (One footnote: TokenDagger
+diverges from the other four by a single token on Pile/cl100k — a known TokenDagger
+edge case, not an encoder bug.)
 </details>
 
 <details>
