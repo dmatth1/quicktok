@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Export Llama-3's tokenizer to quicktok's data files. Llama-3's vocab is NOT
-redistributed in this repo (Meta Llama license) — you supply it, from either:
+"""(Re)generate quicktok's Llama-3 data files. The repo already ships data/llama3.vocab
+(Meta Llama 3 Community License — see NOTICE); use this to rebuild or update it from
 
   * a Hugging Face tokenizer.json (e.g. an ungated mirror), or
   * a llama.cpp BPE vocab GGUF (models/ggml-vocab-llama-bpe.gguf).

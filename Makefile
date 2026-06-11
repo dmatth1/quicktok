@@ -94,7 +94,7 @@ install: lib $(BUILD)/quicktok.pc
 	install -m644 $(BUILD)/libquicktok.a $(DESTDIR)$(PREFIX)/lib/
 	cp -a $(LIB_SO_REAL) $(LIB_SO) $(DESTDIR)$(PREFIX)/lib/
 	install -m644 $(BUILD)/quicktok.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/
-	install -m644 data/cl100k.vocab data/uniclass.bin data/uniclass.bin.meta $(DESTDIR)$(DATADIR)/
+	install -m644 data/*.vocab data/*.special data/*.bin data/*.meta $(DESTDIR)$(DATADIR)/
 
 clean:
 	rm -rf $(BUILD)

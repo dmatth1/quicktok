@@ -141,7 +141,7 @@ The win is *larger* on natural text than on synthetic — the real-corpus number
 | **quicktok kernel (Llama-3)** | **~78** | ~17 |
 | llama.cpp | ~5.4 | ~1.2 |
 
-Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences, not an encoder bug. o200k ships in this library; Llama-3 is supported as a bring-your-own-vocab encoding (see below).
+Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences, not an encoder bug. o200k ships in this library; Llama-3 ships bundled too (Meta Llama 3 Community License — see NOTICE).
 </details>
 
 <details>
@@ -190,28 +190,28 @@ class Tokenizer {
 
 ## Notes & limitations
 
-- Encodings: **cl100k_base**, **o200k_base** (both ship in the repo), and **Llama-3** (bring-your-own-vocab — see below). o200k on Apple M1: ~100 MB/s prose / ~117 code / ~76 CJK, exact on a 9 MB / 2.2 M-token corpus — ~80% of cl100k throughput (2× vocab), still ~2× bpe-openai. Llama-3 runs at full cl100k speed (~120 MB/s; its 128k vocab fits the fast dense path).
+- Encodings: **cl100k_base**, **o200k_base** (both ship in the repo), and **Llama-3** (all bundled). o200k on Apple M1: ~100 MB/s prose / ~117 code / ~76 CJK, exact on a 9 MB / 2.2 M-token corpus — ~80% of cl100k throughput (2× vocab), still ~2× bpe-openai. Llama-3 runs at full cl100k speed (~120 MB/s; its 128k vocab fits the fast dense path).
 - Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.
 - The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](data/uniclass.bin.meta).
 
 ## Llama-3
 
 Llama-3 uses the same kernel (its grammar is cl100k's with o200k-style whitespace, and
-at 128k tokens it runs at full cl100k speed). Its vocabulary is **not redistributed
-here** (Meta Llama license), so you supply it once from a Hugging Face `tokenizer.json`
-or a llama.cpp vocab GGUF:
-
-```sh
-python tools/export_llama3.py path/to/tokenizer.json data   # writes data/llama3.{vocab,special}
-```
+at 128k tokens it runs at full cl100k speed) and ships ready to use:
 
 ```python
-enc = quicktok.get_encoding("llama3", data_dir="data")
+enc = quicktok.get_encoding("llama3")
 ```
 
 ```cpp
 auto tok = quicktok::Tokenizer::load_dir("data", "llama3");
 ```
+
+The bundled `data/llama3.vocab` is derived from Meta's Llama 3 tokenizer and is governed
+by the [Meta Llama 3 Community License](https://llama.meta.com/llama3/license/) (see
+[NOTICE](NOTICE)) — redistributed for interoperability following llama.cpp's precedent.
+Regenerate it from a Hugging Face `tokenizer.json` or llama.cpp GGUF with
+`python tools/export_llama3.py <tokenizer.json> data` if you prefer.
 
 **Exactness:** quicktok reproduces Llama-3's original **tiktoken-rank** BPE byte-for-byte
 (the test vectors verify this when a vocab is present). Hugging Face / llama.cpp infer the

@@ -64,19 +64,13 @@ int main(int argc, char** argv) {
         if (!fails) printf("o200k_base: vectors + specials exact\n");
     }
 
-    // --- Llama-3 (opt-in: runs only if data/llama3.vocab is present) ---
+    // --- Llama-3 ---
     {
-        FILE* lv = fopen((data + "/llama3.vocab").c_str(), "rb");
-        if (lv) {
-            fclose(lv);
-            auto l3 = quicktok::Tokenizer::load_dir(data, "llama3");
-            printf("llama3: vocab=%zu\n", l3.vocab_size());
-            fails += run_vectors(l3, "test/vectors_llama3.bin", false);
-            fails += run_vectors(l3, "test/vectors_llama3_special.bin", true);
-            if (!fails) printf("llama3: vectors + specials exact\n");
-        } else {
-            printf("llama3: SKIPPED (no data/llama3.vocab — run tools/export_llama3.py)\n");
-        }
+        auto l3 = quicktok::Tokenizer::load_dir(data, "llama3");
+        printf("llama3: vocab=%zu\n", l3.vocab_size());
+        fails += run_vectors(l3, "test/vectors_llama3.bin", false);
+        fails += run_vectors(l3, "test/vectors_llama3_special.bin", true);
+        if (!fails) printf("llama3: vectors + specials exact\n");
     }
 
     // --- error handling: loads must THROW (never exit/crash) on bad inputs ---
