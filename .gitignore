@@ -12,3 +12,4 @@ python/*.egg-info/
 python/README.md
 wheelhouse/
 *.whl
+build/bench

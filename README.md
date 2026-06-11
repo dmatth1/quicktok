@@ -71,6 +71,32 @@ Five encoders, same corpus, same vocab, same machine (Apple M1), single thread, 
 
 The ratio holds everywhere we've measured: **2.8–3.1× over bpe-openai** across FineWeb, The Pile, C4, SlimPajama, and Wikipedia on x86; **2.5–2.8×** under bpe-openai's *own* synthetic benchmark methodology; **~14×** over llama.cpp's tokenizer on the Llama-3 vocab. Throughput in MB/s varies with corpus and host — the ratios don't. Details below; full methodology in [evolve `BENCHMARKING.md`](https://github.com/dmatth1/evolve/blob/evolve-tokenizer/tokenizer/BENCHMARKING.md).
 
+**Reproduce it yourself:** `make bench` (native, single-thread + parallel scaling) and `make bench-py` (quicktok vs tiktoken, needs `pip install tiktoken`) run on a bundled 1 MB public-domain corpus — no network, no setup.
+
+<details>
+<summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads)</summary>
+
+<br>`encode_batch()` work-steals across a shared tokenizer. Native kernel throughput (`make bench`):
+
+| threads | cl100k | speedup |
+|---:|---:|---:|
+| 1 | 110 MB/s | 1.0× |
+| 2 | 210 MB/s | 1.9× |
+| 4 | 397 MB/s | 3.6× |
+| 8 | **706 MB/s** | **6.4×** |
+
+From Python (`make bench-py`), quicktok vs tiktoken — both call their native batch APIs, both pay Python's per-document list-marshalling, exactness checked before timing:
+
+| | quicktok | tiktoken | speedup |
+|---|---:|---:|---:|
+| single-thread (cl100k) | 77 MB/s | 15 MB/s | 5.0× |
+| batch, 10 threads (cl100k) | 159 MB/s | 24 MB/s | 6.7× |
+| single-thread (o200k) | 71 MB/s | 22 MB/s | 3.2× |
+| batch, 10 threads (o200k) | 151 MB/s | 24 MB/s | 6.2× |
+
+The Python batch gains less than the native 6.4× because building thousands of Python `list`s of ints is marshalling-bound (tiktoken's batch is too — it tops out at ~1.5× its own single-thread). The raw kernel scaling is the native table above.
+</details>
+
 <details>
 <summary><b>Real-world corpora</b> (x86 server, cl100k, MB/s)</summary>
 

@@ -50,7 +50,7 @@ DATADIR  := $(PREFIX)/share/quicktok
 SRCS := src/quicktok.cpp src/trie2_mb.cpp src/cabi.cpp
 OBJS := $(BUILD)/quicktok.o $(BUILD)/trie2_mb.o $(BUILD)/cabi.o
 
-.PHONY: all lib test example install clean
+.PHONY: all lib test example bench bench-py install clean
 all: lib
 lib: $(BUILD)/libquicktok.a $(LIB_SO)
 
@@ -77,6 +77,13 @@ test: lib
 example: lib
 	$(CXX) $(CXXFLAGS) examples/hello.cpp $(BUILD)/libquicktok.a -o $(BUILD)/hello
 	$(BUILD)/hello
+
+bench: lib
+	$(CXX) $(CXXFLAGS) bench/bench.cpp $(BUILD)/libquicktok.a -o $(BUILD)/bench
+	$(BUILD)/bench data bench/corpus.txt
+
+bench-py:
+	python3 bench/bench.py
 
 $(BUILD)/quicktok.pc: quicktok.pc.in | $(BUILD)
 	sed 's|@PREFIX@|$(PREFIX)|' quicktok.pc.in > $@
