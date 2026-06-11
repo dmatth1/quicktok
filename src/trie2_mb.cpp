@@ -71,10 +71,10 @@ bool Vocab::ivtp_wide(uint32_t t1, uint32_t t2) const {
     uint64_t mkey = ((uint64_t)t1 << 32) | t2;
     uint32_t h = (uint32_t)((mkey * 0x9E3779B97F4A7C15ull) >> 32) & ivmask;
     uint64_t want = (mkey + 1) << 1;
-    uint64_t s = __atomic_load_n(&ivm64[h], __ATOMIC_RELAXED);
+    uint64_t s = qt_relaxed_load(ivm64[h]);
     if ((s >> 1) == (mkey + 1)) return s & 1;
     bool res = ivtp_slow(t1, t2);
-    __atomic_store_n(&ivm64[h], want | (uint64_t)res, __ATOMIC_RELAXED);
+    qt_relaxed_store<uint64_t>(ivm64[h], want | (uint64_t)res);
     return res;
 }
 

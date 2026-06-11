@@ -19,6 +19,24 @@
 
 static const uint32_t RANK_MAX = 0xFFFFFFFFu;
 
+// --- portability shims (the kernel targets GCC/Clang; MSVC for Windows wheels) ---
+#if defined(__GNUC__) || defined(__clang__)
+#  define QT_UNLIKELY(x) __builtin_expect(!!(x), 0)
+namespace quicktok { namespace detail {
+template <class T> static inline T qt_relaxed_load(const T& x) { return __atomic_load_n(&x, __ATOMIC_RELAXED); }
+template <class T> static inline void qt_relaxed_store(T& x, T v) { __atomic_store_n(&x, v, __ATOMIC_RELAXED); }
+}}
+#else
+#  define QT_UNLIKELY(x) (x)
+namespace quicktok { namespace detail {
+// MSVC / x86 / ARM: an aligned load/store of a <=8-byte value is not torn in
+// practice; and the memo is a pure-function cache, so even a torn value only
+// fails the tag check and triggers a recompute — the result is always correct.
+template <class T> static inline T qt_relaxed_load(const T& x) { return x; }
+template <class T> static inline void qt_relaxed_store(T& x, T v) { x = v; }
+}}
+#endif
+
 #ifndef IVBITS
 #define IVBITS 20   // memo capacity (2^20 peak on M1, re-confirmed under TRIE2; x86 uses 21)
 #endif
@@ -147,7 +165,7 @@ struct Vocab {
     inline uint32_t next_prefix(uint32_t id) const { return npm[id]; }
 
     bool is_valid_token_pair(uint32_t t1, uint32_t t2) const {
-        if (__builtin_expect(wide_ids, 0)) return ivtp_wide(t1, t2);
+        if (QT_UNLIKELY(wide_ids)) return ivtp_wide(t1, t2);
         uint64_t mk = ((uint64_t)t1 << 17) | t2;                    // 34-bit pair key
         uint64_t m = mk ^ (mk >> 17);
         m = (m * ((0x9E3779B97F4A7C15ull & 0x3FFFFFFFFull) | 1)) & 0x3FFFFFFFFull;
@@ -157,10 +175,10 @@ struct Vocab {
         // relaxed atomics: each slot value is self-consistent (tag+result written in
         // one u16 store), so concurrent encode() on the same Tokenizer is safe — a
         // racing thread sees either the old or the new entry, both correct.
-        uint16_t s = __atomic_load_n(&ivm[h], __ATOMIC_RELAXED);    // one load
+        uint16_t s = qt_relaxed_load(ivm[h]);                       // one load
         if ((uint16_t)(s & 0xFFFEu) == want) return s & 1;
         bool res = ivtp_slow(t1, t2);
-        __atomic_store_n(&ivm[h], (uint16_t)(want | (uint16_t)res), __ATOMIC_RELAXED);
+        qt_relaxed_store(ivm[h], (uint16_t)(want | (uint16_t)res));
         return res;
     }
     bool ivtp_slow(uint32_t t1, uint32_t t2) const {
