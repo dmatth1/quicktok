@@ -17,7 +17,7 @@ public:
         : tok(quicktok::Tokenizer::load_dir(datadir.empty() ? g_datadir : datadir, encoding)) {}
 
     std::vector<uint32_t> encode(py::bytes b) const {
-        char* d; ssize_t n; PYBIND11_BYTES_AS_STRING_AND_SIZE(b.ptr(), &d, &n);
+        char* d; Py_ssize_t n; PYBIND11_BYTES_AS_STRING_AND_SIZE(b.ptr(), &d, &n);
         py::gil_scoped_release rel;
         return tok.encode(std::string_view(d, (size_t)n));
     }
