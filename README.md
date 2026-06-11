@@ -140,7 +140,7 @@ The win is *larger* on natural text than on synthetic — the real-corpus number
 | **quicktok kernel (Llama-3)** | **~78** | ~17 |
 | llama.cpp | ~5.4 | ~1.2 |
 
-Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences, not an encoder bug. The Llama-3 kernel lives in the [evolve](https://github.com/dmatth1/evolve) lab today; o200k ships in this library.
+Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences, not an encoder bug. o200k ships in this library; Llama-3 is supported as a bring-your-own-vocab encoding (see below).
 </details>
 
 <details>
@@ -189,9 +189,35 @@ class Tokenizer {
 
 ## Notes & limitations
 
-- Encodings: **cl100k_base** and **o200k_base**. (Llama-3 runs in the [evolve](https://github.com/dmatth1/evolve) lab; packaging it is in progress.) o200k on Apple M1: ~100 MB/s prose / ~117 code / ~76 CJK, exact on a 9 MB / 2.2 M-token corpus — roughly 80% of cl100k throughput (2× vocab, bigger tables), still ~2× bpe-openai ([x86 numbers](https://github.com/dmatth1/evolve/blob/evolve-tokenizer/tokenizer/BENCHMARKING.md): 2.1× bpe, 2.8× tiktoken-rs).
+- Encodings: **cl100k_base**, **o200k_base** (both ship in the repo), and **Llama-3** (bring-your-own-vocab — see below). o200k on Apple M1: ~100 MB/s prose / ~117 code / ~76 CJK, exact on a 9 MB / 2.2 M-token corpus — ~80% of cl100k throughput (2× vocab), still ~2× bpe-openai. Llama-3 runs at full cl100k speed (~120 MB/s; its 128k vocab fits the fast dense path).
 - Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.
 - The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](data/uniclass.bin.meta).
+
+## Llama-3
+
+Llama-3 uses the same kernel (its grammar is cl100k's with o200k-style whitespace, and
+at 128k tokens it runs at full cl100k speed). Its vocabulary is **not redistributed
+here** (Meta Llama license), so you supply it once from a Hugging Face `tokenizer.json`
+or a llama.cpp vocab GGUF:
+
+```sh
+python tools/export_llama3.py path/to/tokenizer.json data   # writes data/llama3.{vocab,special}
+```
+
+```python
+enc = quicktok.get_encoding("llama3", data_dir="data")
+```
+
+```cpp
+auto tok = quicktok::Tokenizer::load_dir("data", "llama3");
+```
+
+**Exactness:** quicktok reproduces Llama-3's original **tiktoken-rank** BPE byte-for-byte
+(the test vectors verify this when a vocab is present). Hugging Face / llama.cpp infer the
+same vocab via a **merge list**; the two agree on ~99.9998% of tokens — identical on
+ordinary English, differing only on rare non-Latin+symbol sequences (e.g. Cyrillic next to
+`€`), where the rank order and the merge order pick different splits. Neither is "wrong";
+quicktok matches Meta's original tiktoken-format tokenizer.
 
 ## Regenerating data
 

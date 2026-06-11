@@ -13,8 +13,8 @@ static std::string g_datadir;   // set by the package on import
 
 class PyTokenizer {
 public:
-    explicit PyTokenizer(const std::string& encoding)
-        : tok(quicktok::Tokenizer::load_dir(g_datadir, encoding)) {}
+    PyTokenizer(const std::string& encoding, const std::string& datadir)
+        : tok(quicktok::Tokenizer::load_dir(datadir.empty() ? g_datadir : datadir, encoding)) {}
 
     std::vector<uint32_t> encode(py::bytes b) const {
         char* d; ssize_t n; PYBIND11_BYTES_AS_STRING_AND_SIZE(b.ptr(), &d, &n);
@@ -86,7 +86,8 @@ PYBIND11_MODULE(_quicktok, m) {
     m.def("_set_datadir", [](const std::string& d){ g_datadir = d; });
 
     py::class_<PyTokenizer>(m, "Tokenizer")
-        .def(py::init<const std::string&>(), py::arg("encoding"))
+        .def(py::init<const std::string&, const std::string&>(),
+             py::arg("encoding"), py::arg("data_dir") = "")
         .def("encode", &PyTokenizer::encode_str, py::arg("text"),
              "Encode text -> token ids (ordinary semantics; specials are plain text).")
         .def("encode", &PyTokenizer::encode, py::arg("text"))

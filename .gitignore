@@ -13,3 +13,5 @@ python/README.md
 wheelhouse/
 *.whl
 build/bench
+data/llama3.vocab
+data/llama3.special

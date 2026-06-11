@@ -22,11 +22,16 @@ MODEL_TO_ENCODING = {
 }
 
 
-def get_encoding(name: str) -> "Tokenizer":
-    """Load (and cache) a tokenizer by encoding name: 'cl100k_base' or 'o200k_base'."""
-    if name not in _CACHE:
-        _CACHE[name] = Tokenizer(name)
-    return _CACHE[name]
+def get_encoding(name: str, data_dir: str = "") -> "Tokenizer":
+    """Load (and cache) a tokenizer by encoding name.
+
+    Built-in: 'cl100k_base', 'o200k_base'. 'llama3' needs a data_dir holding
+    llama3.vocab + llama3.special (and uniclass.bin) — see tools/export_llama3.py;
+    Llama-3's vocab is not redistributed here (Meta license)."""
+    key = (name, data_dir)
+    if key not in _CACHE:
+        _CACHE[key] = Tokenizer(name, data_dir)
+    return _CACHE[key]
 
 
 def encoding_for_model(model: str) -> "Tokenizer":

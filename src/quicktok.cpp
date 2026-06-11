@@ -16,6 +16,7 @@ struct Tokenizer::Impl {
     Vocab V;
     std::string name;                 // "cl100k_base" | "o200k_base"
     bool o200k = false;
+    bool llama3 = false;
     UClass U;                         // cl100k-pattern classes (L/N/S)
     UClassO UO;                       // o200k-pattern classes (L/N/S/UPPER/LOWER)
     std::vector<std::pair<std::string, uint32_t>> specials;   // sorted by id
@@ -36,7 +37,7 @@ static void load_specials(const std::string& path, std::vector<std::pair<std::st
     uint32_t n; if (fread(&n, 4, 1, f) != 1) fail();
     if (n > 1024) fail();
     for (uint32_t i = 0; i < n; i++) {
-        uint32_t id; uint16_t len;
+        uint32_t id = 0; uint16_t len = 0;
         if (fread(&id, 4, 1, f) != 1 || fread(&len, 2, 1, f) != 1) fail();
         if (len == 0 || len > 64) fail();
         std::string s(len, 0);
@@ -65,9 +66,16 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
         t.impl->UO = UClassO::load((dir + "/uniclass_o200k.bin").c_str());
         t.impl->o200k = true;
         load_specials(dir + "/o200k.special", t.impl->specials);
+    } else if (encoding == "llama3") {
+        // Llama-3: cl100k letter/number/punct grammar + o200k-style whitespace,
+        // so it reuses the cl100k L/N/S table (uniclass.bin).
+        t.impl->V = Vocab::load((dir + "/llama3.vocab").c_str());
+        t.impl->U = UClass::load((dir + "/uniclass.bin").c_str());
+        t.impl->llama3 = true;
+        load_specials(dir + "/llama3.special", t.impl->specials);
     } else {
         throw std::runtime_error("quicktok: unknown encoding: " + encoding +
-                                 " (supported: cl100k_base, o200k_base)");
+                                 " (supported: cl100k_base, o200k_base, llama3)");
     }
     t.impl->name = encoding;
     return t;
@@ -98,9 +106,11 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
         }
         return;
     }
-    // cl100k: fused pretok+merge loop; ASCII-word fast path skips the alternation
-    // cascade and reuses its trie walk when the word is a single token.
+    // cl100k / Llama-3: fused pretok+merge loop. The ASCII-word fast path is
+    // identical for both (same letter grammar); only the whitespace cascade in
+    // pretok_next differs (Llama-3 uses the o200k-style alts).
     const UClass& U = impl->U;
+    const bool l3 = impl->llama3;
     while (p < L) {
         uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
         if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {       // ASCII word
@@ -113,7 +123,8 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
                 p = we; continue;
             }
         }
-        uint32_t l = detail::pretok_next(U, t, p, L);
+        uint32_t l = l3 ? detail::pretok_next_llama3(U, t, p, L)
+                        : detail::pretok_next(U, t, p, L);
         merge_piece(V, t + p, l, out); p += l;
     }
 }

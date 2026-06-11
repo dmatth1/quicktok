@@ -168,7 +168,8 @@ static inline uint32_t u8dec(const uint8_t* t, uint32_t p, uint32_t len, uint32_
 // Find ONE pretoken starting at p; returns its byte length (no emit/advance).
 // Exposed so e2e can fuse pretok with merge. (Word fast-path lives in the e2e
 // fused loop; here we go straight to the alt cascade for generality.)
-static inline uint32_t pretok_next(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
+template <bool LLAMA3>
+static inline uint32_t pretok_next_impl(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
     uint8_t b = t[p];
     uint32_t nb; uint32_t cp = u8dec(t, p, len, &nb);
     // --- alt 1: '(?i:[sdmt]|ll|ve|re) ---
@@ -218,18 +219,25 @@ static inline uint32_t pretok_next(const UClass& U, const uint8_t* t, uint32_t p
         uint32_t e0 = ascii_ws_run(t, e, len, &lastnl); if (e0 > e) { lastlen = 1; e = e0; }   // ASCII \s run (SIMD)
         while (e<len){ uint32_t n2; uint32_t c2=u8dec(t,e,len,&n2); if(!U.isS(c2)) break; if(c2=='\r'||c2=='\n') lastnl=e; lastlen=n2; e+=n2; }  // Unicode \s tail
         if (e==p) return 1;
-#ifdef LLAMA3_WS   // llama3 whitespace alts: \s*[\r\n]+ | \s+(?!\S) | \s+ (same as o200k)
-        if (lastnl != UINT32_MAX) return lastnl+1 - p;         // \s*[\r\n]+
-        if (e == len)            return e - p;                  // \s+(?!\S), run to EOF
-        if (e - p > lastlen)     return (e-lastlen) - p;        // \s+(?!\S)
-        return e - p;                                           // \s+
-#else              // cl100k: \s++$ | \s*[\r\n] | \s+(?!\S) | \s
-        if (e==len) return e - p;                              // alt5
-        if (lastnl != UINT32_MAX) return lastnl+1 - p;         // alt6
-        if (e - p > lastlen) return (e-lastlen) - p;           // alt7
-        return nb;                                             // alt8
-#endif
+        if constexpr (LLAMA3) {   // llama3 whitespace alts: \s*[\r\n]+ | \s+(?!\S) | \s+
+            if (lastnl != UINT32_MAX) return lastnl+1 - p;     // \s*[\r\n]+
+            if (e == len)            return e - p;              // \s+(?!\S), run to EOF
+            if (e - p > lastlen)     return (e-lastlen) - p;    // \s+(?!\S)
+            return e - p;                                       // \s+
+        } else {                  // cl100k: \s++$ | \s*[\r\n] | \s+(?!\S) | \s
+            if (e==len) return e - p;                          // alt5
+            if (lastnl != UINT32_MAX) return lastnl+1 - p;     // alt6
+            if (e - p > lastlen) return (e-lastlen) - p;       // alt7
+            return nb;                                         // alt8
+        }
     }
+}
+
+static inline uint32_t pretok_next(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
+    return pretok_next_impl<false>(U, t, p, len);          // cl100k
+}
+static inline uint32_t pretok_next_llama3(const UClass& U, const uint8_t* t, uint32_t p, uint32_t len) {
+    return pretok_next_impl<true>(U, t, p, len);           // Llama-3 (cl100k grammar + o200k-style \s)
 }
 
 template <class CB>
