@@ -82,6 +82,20 @@ int main(int argc, char** argv) {
         if (fails == 0) printf("error handling: OK (bad loads throw)\n");
     }
 
+    // --- encode_batch: parallel batch == sequential encode ---
+    {
+        std::vector<std::string> texts;
+        for (int i = 0; i < 257; i++)
+            texts.push_back("batch item " + std::to_string(i) + ": the quick brown fox 123 日本語");
+        std::vector<std::string_view> views(texts.begin(), texts.end());
+        auto batch = tok.encode_batch(views);          // default threads
+        int bad = 0;
+        for (size_t i = 0; i < texts.size(); i++)
+            if (batch[i] != tok.encode(texts[i])) bad++;
+        if (bad) { fails++; printf("  FAIL: encode_batch diverged on %d items\n", bad); }
+        else printf("encode_batch: OK (257 texts, parallel == sequential)\n");
+    }
+
     // --- concurrency: parallel encode() on ONE Tokenizer must stay exact ---
     {
         std::string text;

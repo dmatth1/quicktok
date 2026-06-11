@@ -32,6 +32,11 @@ public:
     // number of tokens encode() would produce (same cost as encode)
     size_t count(std::string_view text) const;
 
+    // encode many texts in parallel (ordinary semantics). threads = 0 picks
+    // hardware concurrency. Safe because a loaded Tokenizer is shareable.
+    std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string_view>& texts,
+                                                    unsigned threads = 0) const;
+
     // token ids -> bytes (appends to out). Special ids decode to their strings;
     // other ids >= vocab_size() are skipped.
     void decode(const uint32_t* ids, size_t n, std::string& out) const;

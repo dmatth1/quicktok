@@ -4,16 +4,42 @@ A fast, exact BPE tokenizer for OpenAI encodings — `cl100k_base` (GPT-3.5 / GP
 
 - **Exact** — token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken). The reference is the spec, and the test suite enforces it.
 - **Fast** — about **3×** the fastest exact tokenizer we know of ([bpe-openai](https://github.com/github/rust-gems)), **6–8×** tiktoken, **10×+** [TokenDagger](https://github.com/M4THYOU/TokenDagger) and llama.cpp. Single-threaded, measured against each project's own API ([benchmarks](#benchmarks)).
-- **Self-contained** — C++20, no external dependencies, ships its own data files.
+- **Drop-in** — Python wheels (`pip install quicktok`), a tiktoken-compatible API, a C ABI, and CMake/`find_package` support. C++20 core, no external dependencies.
 - **Thread-safe** — load once, call `encode()` from as many threads as you like.
 
-## Quick start
+## Install
+
+**Python** (5× faster than tiktoken from Python, single-thread, drop-in-shaped):
+
+```sh
+pip install quicktok
+```
+
+```python
+import quicktok
+enc = quicktok.get_encoding("cl100k_base")        # or "o200k_base"
+ids = enc.encode("hello world")                   # == tiktoken.encode_ordinary
+text = enc.decode(ids)
+quicktok.encoding_for_model("gpt-4o").count("...")  # tiktoken-style model lookup
+```
+
+**C++** — header-and-static-lib, via CMake:
+
+```cmake
+find_package(quicktok REQUIRED)
+target_link_libraries(app PRIVATE quicktok::quicktok)
+```
+
+or `FetchContent`, or plain `make && make install`. There's also a stable **C ABI**
+(`quicktok.h`) for FFI from any language.
+
+## Quick start (build from source)
 
 ```sh
 git clone https://github.com/dmatth1/quicktok
 cd quicktok
 make            # builds build/libquicktok.{a, dylib/so}
-make test       # verifies exact ids vs tiktoken + decode round-trip
+make test       # verifies exact ids vs tiktoken (both encodings) + C ABI
 ```
 
 ```cpp
@@ -26,6 +52,7 @@ auto ids = tok.encode("Hello, quicktok! 日本語 🚀");  // std::vector<uint32
 std::string text = tok.decode(ids);                   // lossless round-trip
 size_t n = tok.count("how many tokens is this?");
 auto with_sp = tok.encode_with_special("a<|endoftext|>b");  // specials -> ids
+auto batch = tok.encode_batch(texts);                       // parallel
 ```
 
 Link against `build/libquicktok.a`, or `make install` and use `pkg-config --cflags --libs quicktok`. The data files install to `share/quicktok`.
@@ -118,6 +145,7 @@ class Tokenizer {
     std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
     std::vector<uint32_t> encode_with_special(std::string_view) const;  // allowed_special="all"
     void encode(const uint8_t* text, size_t len, std::vector<uint32_t>& out) const;
+    std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string_view>&, unsigned threads = 0) const;
     size_t count(std::string_view text) const;
 
     std::string decode(const std::vector<uint32_t>& ids) const;         // handles special ids too

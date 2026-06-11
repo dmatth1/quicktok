@@ -47,8 +47,8 @@ CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra
 CXXFLAGS += $(CXXFLAGS_ARCH) -fPIC -Iinclude -Isrc $(CXXFLAGS_EXTRA)
 DATADIR  := $(PREFIX)/share/quicktok
 
-SRCS := src/quicktok.cpp src/trie2_mb.cpp
-OBJS := $(BUILD)/quicktok.o $(BUILD)/trie2_mb.o
+SRCS := src/quicktok.cpp src/trie2_mb.cpp src/cabi.cpp
+OBJS := $(BUILD)/quicktok.o $(BUILD)/trie2_mb.o $(BUILD)/cabi.o
 
 .PHONY: all lib test example install clean
 all: lib
@@ -70,6 +70,9 @@ $(BUILD):
 test: lib
 	$(CXX) $(CXXFLAGS) test/test_quicktok.cpp $(BUILD)/libquicktok.a -o $(BUILD)/test_quicktok
 	$(BUILD)/test_quicktok data
+	$(CC) -O2 -Iinclude -c test/test_cabi.c -o $(BUILD)/test_cabi.o
+	$(CXX) $(BUILD)/test_cabi.o $(BUILD)/libquicktok.a -o $(BUILD)/test_cabi
+	$(BUILD)/test_cabi
 
 example: lib
 	$(CXX) $(CXXFLAGS) examples/hello.cpp $(BUILD)/libquicktok.a -o $(BUILD)/hello
@@ -80,7 +83,7 @@ $(BUILD)/quicktok.pc: quicktok.pc.in | $(BUILD)
 
 install: lib $(BUILD)/quicktok.pc
 	install -d $(DESTDIR)$(PREFIX)/include $(DESTDIR)$(PREFIX)/lib/pkgconfig $(DESTDIR)$(DATADIR)
-	install -m644 include/quicktok.hpp $(DESTDIR)$(PREFIX)/include/
+	install -m644 include/quicktok.hpp include/quicktok.h $(DESTDIR)$(PREFIX)/include/
 	install -m644 $(BUILD)/libquicktok.a $(DESTDIR)$(PREFIX)/lib/
 	cp -a $(LIB_SO_REAL) $(LIB_SO) $(DESTDIR)$(PREFIX)/lib/
 	install -m644 $(BUILD)/quicktok.pc $(DESTDIR)$(PREFIX)/lib/pkgconfig/

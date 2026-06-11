@@ -5,3 +5,10 @@ build/
 *.so.*
 *.dylib
 __pycache__/
+python/_skbuild/
+python/build/
+python/dist/
+python/*.egg-info/
+python/README.md
+wheelhouse/
+*.whl
