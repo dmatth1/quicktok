@@ -71,24 +71,24 @@ real sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **110.2** | **132.3** | **66.5** |
-| bpe-openai | 33.9 | 39.5 | 27.2 |
-| tiktoken-rs | 15.1 | 13.6 | 12.7 |
-| tiktoken (Python) | 13.8 | 12.7 | 11.7 |
-| TokenDagger | 10.7 | 11.5 | 10.5 |
+| **quicktok** | **116.1** | **144.2** | **75.2** |
+| bpe-openai | 36.5 | 41.6 | 29.2 |
+| tiktoken-rs | 15.3 | 14.3 | 13.5 |
+| tiktoken (Python) | 14.7 | 13.2 | 12.3 |
+| TokenDagger | 11.5 | 12.0 | 11.2 |
 
 **o200k_base** (GPT-4o)
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **77.5** | **98.7** | **44.2** |
-| bpe-openai | 32.4 | 37.3 | 27.6 |
-| tiktoken-rs | 21.3 | 19.7 | 15.8 |
-| tiktoken (Python) | 19.6 | 18.1 | 14.9 |
-| TokenDagger | 10.3 | 11.1 | 9.2 |
+| **quicktok** | **100.6** | **117.1** | **59.2** |
+| bpe-openai | 36.1 | 40.1 | 29.9 |
+| tiktoken-rs | 23.1 | 20.9 | 17.9 |
+| tiktoken (Python) | 21.6 | 19.3 | 16.3 |
+| TokenDagger | 11.0 | 11.7 | 10.2 |
 
-quicktok is fastest in every case: **2.4–3.4× bpe-openai** and **6–10× tiktoken**
-on cl100k, **1.6–2.6×** and **3–5×** on o200k (the 2× vocab narrows the gap, and
+quicktok is fastest in every case: **2.6–3.5× bpe-openai** and **6–11× tiktoken**
+on cl100k, **2.0–2.9×** and **4–6×** on o200k (the 2× vocab narrows the gap, and
 helps tiktoken more than us). Common Crawl — the most multilingual corpus — is our
 weakest ratio. Absolute MB/s moves with corpus and host; the ordering doesn't.
 
@@ -235,7 +235,7 @@ Five encodings ship in the repo, each byte-exact vs its reference:
 | name | model family | reference | notes |
 |---|---|---|---|
 | `cl100k_base` | GPT-3.5 / GPT-4 | tiktoken | the default |
-| `o200k_base` | GPT-4o | tiktoken | ~80% of cl100k speed (2× vocab), still ~2× bpe-openai |
+| `o200k_base` | GPT-4o | tiktoken | ~85% of cl100k speed (2× vocab), 2–2.9× bpe-openai |
 | `o200k_harmony` | GPT-OSS (20b/120b) | tiktoken | same pattern + ranks as o200k_base, extra chat specials |
 | `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
 | `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers |
