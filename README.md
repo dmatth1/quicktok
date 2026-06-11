@@ -99,27 +99,21 @@ bundled 1 MB public-domain corpus — no network, no setup.
 <details>
 <summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads)</summary>
 
-<br>`encode_batch()` work-steals across a shared tokenizer. Native kernel throughput (`make bench`):
+<br>Native `encode_batch()` (`make bench`), cl100k:
 
-| threads | cl100k | speedup |
+| threads | MB/s | speedup |
 |---:|---:|---:|
-| 1 | 110 MB/s | 1.0× |
-| 2 | 210 MB/s | 1.9× |
-| 4 | 397 MB/s | 3.6× |
-| 8 | **706 MB/s** | **6.4×** |
+| 1 | 110 | 1.0× |
+| 2 | 210 | 1.9× |
+| 4 | 397 | 3.6× |
+| 8 | **706** | **6.4×** |
 
-From Python (`make bench-py`), cl100k, 10 threads, exact-checked first:
+From Python (`make bench-py`), cl100k, 10 threads:
 
 | Python API | quicktok | tiktoken | speedup |
 |---|---:|---:|---:|
 | single-thread | 77 MB/s | 15 MB/s | **5.0×** |
 | `encode_batch` | **550 MB/s** | 24 MB/s (batch) | **24×** |
-
-`encode_batch` returns one flat `uint32` token buffer plus an `int64` offsets
-array (`tokens[offsets[i]:offsets[i+1]]` is document *i*) rather than building
-thousands of Python lists — the marshalling cost that caps tiktoken's own batch
-at ~1.5× its single-thread. That's how it keeps the full native scaling.
-`count_batch(enc, texts)` returns per-document counts the same way.
 </details>
 
 <details>
@@ -225,6 +219,7 @@ class Tokenizer {
 
 - `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
 - Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged.
+- Python's `encode_batch` returns a flat `uint32` token array plus `int64` offsets (`tokens[offsets[i]:offsets[i+1]]` is document *i*, no per-document Python lists); `count_batch(enc, texts)` gives per-document counts.
 - `load*` throws `std::runtime_error` on missing or corrupt data files. Nothing throws on the encode hot path (one exception: inputs over 4 GiB per call are rejected).
 - A loaded `Tokenizer` is safe to share across threads — concurrent `encode()`/`decode()` is supported and tested.
 
