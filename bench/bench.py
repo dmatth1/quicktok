@@ -47,9 +47,10 @@ def main():
 
         T = nthreads
         qb = best_of(5, lambda: qt.encode_batch(docs, T))
+        qn = best_of(5, lambda: qt.encode_batch_numpy(docs, T))
         tb = best_of(5, lambda: tk.encode_ordinary_batch(docs, num_threads=T))
-        print(f"  batch ({T:>2} thr)   quicktok {mb/qb:7.1f} MB/s   tiktoken {mb/tb:6.1f} MB/s   {tb/qb:.1f}x")
-        print(f"  quicktok batch speedup over its own single-thread: {q1/qb:.2f}x\n")
+        print(f"  batch ({T:>2} thr) list    quicktok {mb/qb:7.1f} MB/s   tiktoken {mb/tb:6.1f} MB/s   {tb/qb:.1f}x")
+        print(f"  batch ({T:>2} thr) numpy   quicktok {mb/qn:7.1f} MB/s   ({q1/qn:.1f}x its single-thread, {tb/qn:.0f}x tiktoken batch)\n")
 
 
 if __name__ == "__main__":

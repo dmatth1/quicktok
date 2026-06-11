@@ -37,4 +37,13 @@ def encoding_for_model(model: str) -> "Tokenizer":
     raise KeyError(f"unknown model {model!r}; pass an encoding name to get_encoding()")
 
 
-__all__ = ["Tokenizer", "get_encoding", "encoding_for_model", "MODEL_TO_ENCODING", "__version__"]
+def count_batch(enc: "Tokenizer", texts, threads: int = 0):
+    """Token counts for many texts, in parallel. Returns a numpy int64 array.
+    Faster than len(encode(t)) per text — no Python list of ids is ever built."""
+    import numpy as _np
+    _toks, offsets = enc.encode_batch_numpy(list(texts), threads)
+    return _np.diff(offsets)
+
+
+__all__ = ["Tokenizer", "get_encoding", "encoding_for_model", "count_batch",
+           "MODEL_TO_ENCODING", "__version__"]

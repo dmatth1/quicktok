@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "dmatth1" }]
+dependencies = ["numpy>=1.21"]
 keywords = ["tokenizer", "bpe", "tiktoken", "cl100k", "o200k", "gpt"]
 classifiers = [
   "License :: OSI Approved :: MIT License",

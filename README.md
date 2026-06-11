@@ -85,16 +85,15 @@ The ratio holds everywhere we've measured: **2.8–3.1× over bpe-openai** acros
 | 4 | 397 MB/s | 3.6× |
 | 8 | **706 MB/s** | **6.4×** |
 
-From Python (`make bench-py`), quicktok vs tiktoken — both call their native batch APIs, both pay Python's per-document list-marshalling, exactness checked before timing:
+From Python (`make bench-py`), quicktok vs tiktoken, cl100k, 10 threads, exact-checked first:
 
-| | quicktok | tiktoken | speedup |
+| Python API | quicktok | tiktoken | speedup |
 |---|---:|---:|---:|
-| single-thread (cl100k) | 77 MB/s | 15 MB/s | 5.0× |
-| batch, 10 threads (cl100k) | 159 MB/s | 24 MB/s | 6.7× |
-| single-thread (o200k) | 71 MB/s | 22 MB/s | 3.2× |
-| batch, 10 threads (o200k) | 151 MB/s | 24 MB/s | 6.2× |
+| single-thread | 77 MB/s | 15 MB/s | **5.0×** |
+| `encode_batch` → `list[list[int]]` | 150 MB/s | 24 MB/s (batch) | 6.7× |
+| `encode_batch_numpy` → flat arrays | **550 MB/s** | 24 MB/s (batch) | **24×** |
 
-The Python batch gains less than the native 6.4× because building thousands of Python `list`s of ints is marshalling-bound (tiktoken's batch is too — it tops out at ~1.5× its own single-thread). The raw kernel scaling is the native table above.
+`encode_batch` returns `list[list[int]]` and is marshalling-bound (building thousands of Python lists — tiktoken's batch is too, topping out at ~1.5× its own single-thread). **`encode_batch_numpy`** returns one flat `uint32` token buffer + an `int64` offsets array (`tokens[offsets[i]:offsets[i+1]]` is doc *i*), skipping all per-document Python objects — so it realizes the full kernel scaling (7.7× its single-thread) and is 24× tiktoken's batch. `quicktok.count_batch(enc, texts)` returns per-document counts (an `np.diff` of the offsets) for token budgeting.
 </details>
 
 <details>
