@@ -75,8 +75,7 @@ and every encoder's output verified token-for-token identical before timing:
 The ratio holds everywhere we've measured: **2.8–3.1× over bpe-openai** across
 FineWeb, The Pile, C4, SlimPajama, and Wikipedia on x86; **2.5–2.8×** under
 bpe-openai's own benchmark setup; **~14×** over llama.cpp on the Llama-3 vocab.
-Absolute MB/s moves with corpus and host — the ratios don't. Full methodology in
-[evolve `BENCHMARKING.md`](https://github.com/dmatth1/evolve/blob/evolve-tokenizer/tokenizer/BENCHMARKING.md).
+Absolute MB/s moves with corpus and host — the ratios don't.
 
 **Reproduce it yourself:** `make bench` (native, single-thread + parallel scaling)
 and `make bench-py` (quicktok vs tiktoken, needs `pip install tiktoken`) run on a
@@ -178,8 +177,6 @@ Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-stru
 - **2-byte trie** — the longest-match walk reads 2 input bytes per single 16-byte cache load, with a zero-lookup direct table for CJK characters.
 - **Dense validity memo** — merge-validity checks hit a 2 MB exactly-keyed cache (a bijective mixer means no aliasing, ever).
 - **Specialized pretokenizer** — the fixed cl100k regex is compiled by hand into a scanner; no general regex engine anywhere.
-
-The full measurement trail — every design decision, dead end, and benchmark — is in the [evolve](https://github.com/dmatth1/evolve) lab (`tokenizer/TOKENIZER_LOG.md`).
 
 ## API
 
