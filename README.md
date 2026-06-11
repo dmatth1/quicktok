@@ -1,6 +1,15 @@
 # quicktok
 
-A fast, exact BPE tokenizer for OpenAI encodings written in C++. **6–8×** faster than tiktoken. See ([benchmarks](#benchmarks)).
+A fast, exact BPE tokenizer for OpenAI encodings, written in C++. Token ids are
+byte-identical to [tiktoken](https://github.com/openai/tiktoken), and encoding runs
+about 3× faster than the fastest exact tokenizer we know of
+([bpe-openai](https://github.com/github/rust-gems)) — 6–8× faster than tiktoken
+itself. See [benchmarks](#benchmarks).
+
+- **Exact** — ids match tiktoken byte-for-byte; every benchmark is exactness-checked before timing.
+- **Drop-in** — Python wheels with a tiktoken-style API, a stable C ABI, CMake support.
+- **Self-contained** — C++20, no external dependencies; cl100k_base, o200k_base, and Llama-3 ship in the repo.
+- **Thread-safe** — load once, call `encode()` from as many threads as you like.
 
 ## Install
 
@@ -12,29 +21,27 @@ pip install quicktok
 
 ```python
 import quicktok
-enc = quicktok.get_encoding("cl100k_base")        # or "o200k_base"
+enc = quicktok.get_encoding("cl100k_base")        # or "o200k_base", "llama3"
 ids = enc.encode("hello world")                   # == tiktoken.encode_ordinary
 text = enc.decode(ids)
 quicktok.encoding_for_model("gpt-4o").count("...")  # tiktoken-style model lookup
 ```
 
-**C++** — header-and-static-lib, via CMake:
+**C++** — via CMake (`find_package` or `FetchContent`), or `make install` and
+pkg-config. There's also a stable **C ABI** (`quicktok.h`) for FFI from any language.
 
 ```cmake
 find_package(quicktok REQUIRED)
 target_link_libraries(app PRIVATE quicktok::quicktok)
 ```
 
-or `FetchContent`, or plain `make && make install`. There's also a stable **C ABI**
-(`quicktok.h`) for FFI from any language.
-
-## Quick start (build from source)
+## Build from source
 
 ```sh
 git clone https://github.com/dmatth1/quicktok
 cd quicktok
 make            # builds build/libquicktok.{a, dylib/so}
-make test       # verifies exact ids vs tiktoken (both encodings) + C ABI
+make test       # verifies exact ids vs tiktoken (all encodings) + C ABI
 ```
 
 ```cpp
@@ -50,17 +57,12 @@ auto with_sp = tok.encode_with_special("a<|endoftext|>b");  // specials -> ids
 auto batch = tok.encode_batch(texts);                       // parallel
 ```
 
-Link against `build/libquicktok.a`, or `make install` and use `pkg-config --cflags --libs quicktok`. The data files install to `share/quicktok`.
-
-## Details
-- **Exact** — token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken).
-- **Fast** — about **3×** the fastest exact tokenizer we know of ([bpe-openai](https://github.com/github/rust-gems)), **6–8×** tiktoken, **10×+** [TokenDagger](https://github.com/M4THYOU/TokenDagger) and llama.cpp.
-- **Drop-in** — Python wheels (`pip install quicktok`), a tiktoken-compatible API, a C ABI, and CMake/`find_package` support. C++20 core, no external dependencies.
-- **Thread-safe** — load once, call `encode()` from as many threads as you like.
+The data files install to `share/quicktok`.
 
 ## Benchmarks
 
-Five encoders, same corpus, same vocab, same machine (Apple M1), single thread, and every encoder's output verified token-for-token identical before timing:
+Five encoders, same corpus, same vocab, same machine (Apple M1), single thread,
+and every encoder's output verified token-for-token identical before timing:
 
 | encoder | The Pile (40 MB) | code (20 MB) |
 |---|---:|---:|
@@ -70,9 +72,15 @@ Five encoders, same corpus, same vocab, same machine (Apple M1), single thread, 
 | tiktoken (Python) | 14.0 | 12.1 |
 | TokenDagger | 10.8 | 12.2 |
 
-The ratio holds everywhere we've measured: **2.8–3.1× over bpe-openai** across FineWeb, The Pile, C4, SlimPajama, and Wikipedia on x86; **2.5–2.8×** under bpe-openai's *own* synthetic benchmark methodology; **~14×** over llama.cpp's tokenizer on the Llama-3 vocab. Throughput in MB/s varies with corpus and host — the ratios don't. Details below; full methodology in [evolve `BENCHMARKING.md`](https://github.com/dmatth1/evolve/blob/evolve-tokenizer/tokenizer/BENCHMARKING.md).
+The ratio holds everywhere we've measured: **2.8–3.1× over bpe-openai** across
+FineWeb, The Pile, C4, SlimPajama, and Wikipedia on x86; **2.5–2.8×** under
+bpe-openai's own benchmark setup; **~14×** over llama.cpp on the Llama-3 vocab.
+Absolute MB/s moves with corpus and host — the ratios don't. Full methodology in
+[evolve `BENCHMARKING.md`](https://github.com/dmatth1/evolve/blob/evolve-tokenizer/tokenizer/BENCHMARKING.md).
 
-**Reproduce it yourself:** `make bench` (native, single-thread + parallel scaling) and `make bench-py` (quicktok vs tiktoken, needs `pip install tiktoken`) run on a bundled 1 MB public-domain corpus — no network, no setup.
+**Reproduce it yourself:** `make bench` (native, single-thread + parallel scaling)
+and `make bench-py` (quicktok vs tiktoken, needs `pip install tiktoken`) run on a
+bundled 1 MB public-domain corpus — no network, no setup.
 
 <details>
 <summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads)</summary>
@@ -86,7 +94,7 @@ The ratio holds everywhere we've measured: **2.8–3.1× over bpe-openai** acros
 | 4 | 397 MB/s | 3.6× |
 | 8 | **706 MB/s** | **6.4×** |
 
-From Python (`make bench-py`), quicktok vs tiktoken, cl100k, 10 threads, exact-checked first:
+From Python (`make bench-py`), cl100k, 10 threads, exact-checked first:
 
 | Python API | quicktok | tiktoken | speedup |
 |---|---:|---:|---:|
@@ -94,7 +102,11 @@ From Python (`make bench-py`), quicktok vs tiktoken, cl100k, 10 threads, exact-c
 | `encode_batch` → `list[list[int]]` | 150 MB/s | 24 MB/s (batch) | 6.7× |
 | `encode_batch_numpy` → flat arrays | **550 MB/s** | 24 MB/s (batch) | **24×** |
 
-`encode_batch` returns `list[list[int]]` and is marshalling-bound (building thousands of Python lists — tiktoken's batch is too, topping out at ~1.5× its own single-thread). **`encode_batch_numpy`** returns one flat `uint32` token buffer + an `int64` offsets array (`tokens[offsets[i]:offsets[i+1]]` is doc *i*), skipping all per-document Python objects — so it realizes the full kernel scaling (7.7× its single-thread) and is 24× tiktoken's batch. `quicktok.count_batch(enc, texts)` returns per-document counts (an `np.diff` of the offsets) for token budgeting.
+`encode_batch` is bound by building thousands of Python lists (tiktoken's batch
+is too). `encode_batch_numpy` skips that: it returns one flat `uint32` token
+buffer plus an `int64` offsets array (`tokens[offsets[i]:offsets[i+1]]` is
+document *i*), so it keeps the full native scaling. `count_batch(enc, texts)`
+returns per-document counts the same way.
 </details>
 
 <details>
@@ -113,13 +125,14 @@ From Python (`make bench-py`), quicktok vs tiktoken, cl100k, 10 threads, exact-c
 | Wikipedia | 15 MB | **75.1** | 26.1 | 11.8 | 2.88× | 6.4× |
 | Common Crawl | 15 MB | **45.9** | 20.2 | 9.7 | 2.28× | 4.7× |
 
-Common Crawl is the most multilingual corpus and our relative weak spot (2.28×). The 100 MB row matches the 15 MB row — the ratio is size-stable.
+Common Crawl is the most multilingual corpus and our weakest ratio (2.28×).
+The 100 MB row matches the 15 MB row — the ratio is size-stable.
 </details>
 
 <details>
 <summary><b>bpe-openai's own microbenchmark</b> (x86 server, synthetic text, size sweep)</summary>
 
-<br>Reproduces the reference's `performance.rs` setup exactly — synthetic BPE-random text, swept input sizes:
+<br>Reproduces the reference's `performance.rs` setup exactly:
 
 | input size | quicktok | bpe-openai | tiktoken-rs | vs bpe |
 |---|---:|---:|---:|---:|
@@ -128,7 +141,8 @@ Common Crawl is the most multilingual corpus and our relative weak spot (2.28×)
 | 1 KB | **45.9** | 18.1 | 9.0 | 2.54× |
 | 10 KB | **46.5** | 16.7 | 9.1 | 2.79× |
 
-The win is *larger* on natural text than on synthetic — the real-corpus numbers above are the conservative ones.
+The win is *larger* on natural text than on synthetic — the real-corpus numbers
+above are the conservative ones.
 </details>
 
 <details>
@@ -138,16 +152,23 @@ The win is *larger* on natural text than on synthetic — the real-corpus number
 
 | | MB/s | Mtok/s |
 |---|---:|---:|
-| **quicktok kernel (Llama-3)** | **~78** | ~17 |
+| **quicktok (Llama-3)** | **~78** | ~17 |
 | llama.cpp | ~5.4 | ~1.2 |
 
-Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences, not an encoder bug. o200k ships in this library; Llama-3 ships bundled too (Meta Llama 3 Community License — see NOTICE).
+Token agreement is 99.9998% (3,274,274 of 3,274,281); the 7 differing tokens are
+a known tiktoken-rank vs HF-merges divergence on rare Cyrillic+symbol sequences,
+not an encoder bug. See [Encodings](#encodings).
 </details>
 
 <details>
 <summary><b>Notes on fairness</b></summary>
 
-<br>Every reference is called through the same raw API its own benchmark uses (e.g. `encode_ordinary`, `encode_via_backtracking`) — no convenience-wrapper handicaps. Every comparison is exact-checked on the same bytes before timing. TokenDagger's README claims 2–4× over tiktoken, but that's on Llama-4/Mistral vocabs on AMD EPYC; on cl100k it lands at parity with Python tiktoken. Building this repo reproduces ~120–135 MB/s on the bundled M1 fixtures (`make example`).
+<br>Every reference is called through the same raw API its own benchmark uses
+(e.g. `encode_ordinary`, `encode_via_backtracking`) — no convenience-wrapper
+handicaps. Every comparison is exact-checked on the same bytes before timing.
+TokenDagger's README claims 2–4× over tiktoken, but that's on Llama-4/Mistral
+vocabs on AMD EPYC; on cl100k it lands at parity with Python tiktoken. Building
+this repo reproduces ~120–135 MB/s on the bundled M1 fixtures (`make example`).
 </details>
 
 ## How it's fast
@@ -165,7 +186,7 @@ The full measurement trail — every design decision, dead end, and benchmark �
 ```cpp
 namespace quicktok {
 class Tokenizer {
-    // encoding: "cl100k_base" (default) or "o200k_base"
+    // encoding: "cl100k_base" (default), "o200k_base", or "llama3"
     static Tokenizer load_dir(const std::string& dir, const std::string& encoding = "cl100k_base");
 
     std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
@@ -183,21 +204,16 @@ class Tokenizer {
 }
 ```
 
+- `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
+- Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged.
 - `load*` throws `std::runtime_error` on missing or corrupt data files. Nothing throws on the encode hot path (one exception: inputs over 4 GiB per call are rejected).
 - A loaded `Tokenizer` is safe to share across threads — concurrent `encode()`/`decode()` is supported and tested.
-- Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged.
-- `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
 
-## Notes & limitations
+## Encodings
 
-- Encodings: **cl100k_base**, **o200k_base** (both ship in the repo), and **Llama-3** (all bundled). o200k on Apple M1: ~100 MB/s prose / ~117 code / ~76 CJK, exact on a 9 MB / 2.2 M-token corpus — ~80% of cl100k throughput (2× vocab), still ~2× bpe-openai. Llama-3 runs at full cl100k speed (~120 MB/s; its 128k vocab fits the fast dense path).
-- Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.
-- The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](data/uniclass.bin.meta).
-
-## Llama-3
-
-Llama-3 uses the same kernel (its grammar is cl100k's with o200k-style whitespace, and
-at 128k tokens it runs at full cl100k speed) and ships ready to use:
+**cl100k_base** (GPT-3.5/4), **o200k_base** (GPT-4o), and **Llama-3** all ship in
+the repo. o200k runs at ~80% of cl100k throughput (its vocab is twice the size) —
+still about 2× bpe-openai. Llama-3 shares cl100k's grammar and runs at full speed:
 
 ```python
 enc = quicktok.get_encoding("llama3")
@@ -207,29 +223,32 @@ enc = quicktok.get_encoding("llama3")
 auto tok = quicktok::Tokenizer::load_dir("data", "llama3");
 ```
 
-The bundled `data/llama3.vocab` is derived from Meta's Llama 3 tokenizer and is governed
-by the [Meta Llama 3 Community License](https://llama.meta.com/llama3/license/) (see
-[NOTICE](NOTICE)) — redistributed for interoperability following llama.cpp's precedent.
-Regenerate it from a Hugging Face `tokenizer.json` or llama.cpp GGUF with
-`python tools/export_llama3.py <tokenizer.json> data` if you prefer.
+The bundled `data/llama3.vocab` is derived from Meta's Llama 3 tokenizer and is
+governed by the [Meta Llama 3 Community License](https://llama.meta.com/llama3/license/)
+(see [NOTICE](NOTICE)) — redistributed for interoperability following llama.cpp's
+precedent. Regenerate it from a Hugging Face `tokenizer.json` or llama.cpp GGUF
+with `python tools/export_llama3.py <tokenizer.json> data` if you prefer.
 
-**Exactness:** quicktok reproduces Llama-3's original **tiktoken-rank** BPE byte-for-byte
-(the test vectors verify this when a vocab is present). Hugging Face / llama.cpp infer the
-same vocab via a **merge list**; the two agree on ~99.9998% of tokens — identical on
-ordinary English, differing only on rare non-Latin+symbol sequences (e.g. Cyrillic next to
-`€`), where the rank order and the merge order pick different splits. Neither is "wrong";
-quicktok matches Meta's original tiktoken-format tokenizer.
+**Llama-3 exactness:** quicktok reproduces Llama-3's original **tiktoken-rank**
+BPE byte-for-byte. Hugging Face and llama.cpp infer the same vocab via a **merge
+list**; the two agree on ~99.9998% of tokens, differing only on rare
+non-Latin+symbol sequences (e.g. Cyrillic next to `€`), where the rank order and
+the merge order pick different splits. Neither is "wrong"; quicktok matches
+Meta's original tiktoken-format tokenizer.
 
-## Regenerating data
+## Notes
 
-```sh
-pip install tiktoken regex
-python tools/export_fixtures.py   # data/cl100k.vocab from tiktoken
-python tools/export_unicode.py    # data/uniclass.bin + version stamp
-python tools/gen_vectors.py       # test/vectors.bin
-```
+- Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.
+- The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](data/uniclass.bin.meta).
+- To regenerate the data files from the references:
+
+  ```sh
+  pip install tiktoken regex
+  python tools/export_fixtures.py   # data/cl100k.vocab from tiktoken
+  python tools/export_unicode.py    # data/uniclass.bin + version stamp
+  python tools/gen_vectors.py       # test/vectors.bin
+  ```
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
