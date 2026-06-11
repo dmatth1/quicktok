@@ -128,13 +128,15 @@ at ~1.5× its single-thread. That's how it keeps the full native scaling.
 <br>The same five encoders and method on an x86 server (Intel Xeon @ 2.8 GHz,
 single thread) — the three 25 MB corpora re-fetched from their sources (The Pile,
 GitHub code, multilingual Common Crawl), every output verified token-for-token
-identical before timing (throughput in **MB/s**):
+identical before timing (throughput in **MB/s**). quicktok is shown both as its
+native C++ kernel and as the Python wheel most users `pip install`:
 
 **cl100k_base** (GPT-3.5 / GPT-4)
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **75.0** | **84.4** | **44.8** |
+| **quicktok** (native) | **75.0** | **84.4** | **44.8** |
+| quicktok (Python) | 44.1 | 48.5 | 28.2 |
 | bpe-openai | 25.9 | 30.8 | 22.9 |
 | tiktoken-rs | 11.1 | 10.2 | 11.1 |
 | tiktoken (Python) | 10.2 | 9.1 | 9.5 |
@@ -144,14 +146,18 @@ identical before timing (throughput in **MB/s**):
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **47.3** | **62.6** | **29.5** |
+| **quicktok** (native) | **47.3** | **62.6** | **29.5** |
+| quicktok (Python) | 32.4 | 37.7 | 23.0 |
 | bpe-openai | 24.4 | 28.9 | 23.9 |
 | tiktoken-rs | 17.0 | 15.5 | 15.1 |
 | tiktoken (Python) | 14.2 | 13.3 | 13.2 |
 | TokenDagger | 6.6 | 7.3 | 6.2 |
 
-Same ordering as the M1 table — quicktok fastest in every case: **2.0–2.9× bpe-openai**
-and **4.7–9.3× tiktoken** on cl100k, **1.2–2.2×** and **2.2–4.7×** on o200k. Absolute
+Same ordering as the M1 table — quicktok fastest in every case: the native kernel is
+**2.0–2.9× bpe-openai** and **4.7–9.3× tiktoken** on cl100k, **1.2–2.2×** and
+**2.2–4.7×** on o200k. Even through the Python binding (which carries the usual
+str→bytes marshalling cost) quicktok still beats bpe-openai in five of six cells —
+tying it only on o200k Common Crawl — and runs ~1.7–5.3× Python tiktoken. Absolute
 MB/s is lower than the M1 above (this box has a slower core); the *ratio* is what
 travels, and Common Crawl stays our weakest ratio. All five agree byte-for-byte except
 TokenDagger, which diverges by a single token on the Pile/cl100k (6,109,917 vs
