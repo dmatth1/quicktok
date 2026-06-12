@@ -107,8 +107,47 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
         t.impl->nfc = true;
         load_specials(dir + "/qwen3.special", t.impl->specials);
     } else {
-        throw std::runtime_error("quicktok: unknown encoding: " + encoding +
-            " (supported: cl100k_base, o200k_base, o200k_harmony, llama3, llama4, qwen3)");
+        // Data-driven encoding: <dir>/<name>.enc, written by tools/import_tokenizer.py
+        // after its exactness verification passes. key=value lines:
+        //   scanner=cl100k|o200k|llama3|qwen   (which hand-compiled pretok grammar)
+        //   nfc=1                              (reference pipeline NFC-normalizes)
+        // Vocab/specials are <name>.vocab / <name>.special; the uniclass table is
+        // implied by the scanner.
+        std::string encpath = dir + "/" + encoding + ".enc";
+        FILE* ef = fopen(encpath.c_str(), "rb");
+        if (!ef)
+            throw std::runtime_error("quicktok: unknown encoding: " + encoding +
+                " (built-in: cl100k_base, o200k_base, o200k_harmony, llama3, llama4, qwen3;"
+                " or import one with tools/import_tokenizer.py)");
+        char line[256];
+        std::string scanner;
+        bool nfc = false;
+        while (fgets(line, sizeof line, ef)) {
+            std::string s(line);
+            while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ')) s.pop_back();
+            if (s.empty() || s[0] == '#') continue;
+            if (s.rfind("scanner=", 0) == 0) scanner = s.substr(8);
+            else if (s.rfind("nfc=", 0) == 0) nfc = (s.substr(4) == "1");
+            else { fclose(ef); throw std::runtime_error("quicktok: bad line in " + encpath + ": " + s); }
+        }
+        fclose(ef);
+        t.impl->V = Vocab::load((dir + "/" + encoding + ".vocab").c_str());
+        if (scanner == "o200k") {
+            t.impl->UO = UClassO::load((dir + "/uniclass_o200k.bin").c_str());
+            t.impl->o200k = true;
+        } else if (scanner == "cl100k" || scanner == "llama3" || scanner == "qwen") {
+            t.impl->U = UClass::load((dir + "/uniclass.bin").c_str());
+            if (scanner == "llama3") t.impl->llama3 = true;
+            if (scanner == "qwen") t.impl->qwen = true;
+        } else {
+            throw std::runtime_error("quicktok: bad scanner in " + encpath + ": '" + scanner +
+                                     "' (cl100k | o200k | llama3 | qwen)");
+        }
+        if (nfc) {
+            t.impl->nfcT = NFC::load((dir + "/nfc.bin").c_str());
+            t.impl->nfc = true;
+        }
+        load_specials(dir + "/" + encoding + ".special", t.impl->specials);
     }
     t.impl->name = encoding;
     return t;

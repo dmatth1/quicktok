@@ -290,6 +290,29 @@ auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, 
   enc = quicktok.get_encoding("llama4", "data")
   ```
 
+### Importing other tokenizers
+
+Any byte-level-BPE tokenizer whose pretokenizer matches one of quicktok's
+hand-compiled grammars can be imported — **with exactness verified as part of
+the import**:
+
+```sh
+python tools/import_tokenizer.py path/to/tokenizer.json myenc --corpus big.txt
+```
+
+```python
+enc = quicktok.get_encoding("myenc", "data")
+```
+
+The tool parses the tokenizer config (HF `tokenizer.json` or Mistral-style
+`tekken.json`), checks the normalizer (none/NFC), classifies the pretokenizer
+regex against the supported grammars, writes the data files, then encodes a
+stress suite (plus any `--corpus` files) with both the reference tokenizer and
+quicktok and compares token-for-token. **A mismatch fails the import** — there
+is no slow fallback and no approximate mode; an unrecognized pattern is refused
+with the pattern printed, because each grammar is compiled by hand (that's where
+the speed comes from).
+
 ## Notes
 
 - Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.

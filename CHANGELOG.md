@@ -13,6 +13,16 @@ versioning is [SemVer](https://semver.org).
   Reproduce with `bench/hf_qwen_bench.py`, `bench/llama4_bench.py`, and
   `bench/llamacpp_bench.cpp`.
 
+### Added
+- **Tokenizer importer with built-in verification** (`tools/import_tokenizer.py`):
+  imports any byte-level-BPE `tokenizer.json` / `tekken.json` whose pretokenizer
+  matches a supported grammar (cl100k / o200k / llama3 / qwen) and whose
+  normalizer is none/NFC. Emits `<name>.{vocab,special,enc}`; `load_dir` loads
+  non-builtin names via the `.enc` sidecar. The import encodes a stress suite
+  plus optional corpora with the reference and with quicktok (real library, via
+  the C ABI) and fails on any token mismatch — no fallback modes, unrecognized
+  patterns are refused with the pattern printed.
+
 ### Fixed
 - **`qwen3` now applies NFC normalization** (the step HF's pipeline runs before
   tokenizing), making it byte-exact vs the Hugging Face tokenizer on arbitrary
