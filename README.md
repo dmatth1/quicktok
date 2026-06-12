@@ -62,8 +62,9 @@ The data files install to `share/quicktok`.
 ## Benchmarks
 
 Five encoders, same machine (Apple M1), single thread, every output verified
-token-for-token identical before timing. Three 25 MB corpora streamed from their
-real sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
+token-for-token identical before timing, every reference called through the same
+raw API its own benchmark uses. Three 25 MB corpora streamed from their real
+sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
 (multilingual) — across both common OpenAI encodings (throughput in **MB/s**):
 
 **cl100k_base** (GPT-3.5 / GPT-4)
@@ -190,19 +191,6 @@ Reproduce: `python bench/hf_qwen_bench.py`, `python bench/llama4_bench.py`,
 and `bench/llamacpp_bench.cpp`.
 </details>
 
-<details>
-<summary><b>Notes on fairness</b></summary>
-
-<br>Every reference is called through the same raw API its own benchmark uses
-(e.g. `encode_ordinary`, `encode_via_backtracking`) — no convenience-wrapper
-handicaps. TokenDagger's README claims 2–4× over tiktoken, but that's on
-Llama-4/Mistral vocabs on AMD EPYC; on cl100k/o200k here it lands around Python
-tiktoken's level, and on its own Llama-4 vocab about half of it (table above).
-We checked our setup wasn't the cause: PCRE2 JIT is verified active, and
-rebuilding TokenDagger with `-O3 -mcpu=native` (its own Makefile uses `-O2`)
-changes its numbers by under 1%. The gap is structural — a backtracking regex
-engine called per pretoken, and byte-string-keyed merge lookups.
-</details>
 
 ## How it's fast
 
