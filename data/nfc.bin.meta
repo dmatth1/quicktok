@@ -1,0 +1,7 @@
+sha256: c5b8a5beee77e7dcea1a85aee9980d863a961d3ebd8aab0cca49fe4644eb4b72
+python: 3.14.5
+cpython-unicodedata-ucd: 16.0.0
+tables: suspicious=289 ranges, ccc=934, decomp=2081, comp-pairs=961
+contract: a string containing no suspicious codepoint is already NFC;
+  the C++ fast path relies on this. Hangul (AC00-D7A3, jamo) handled
+  algorithmically. Re-run `verify` after any Python/UCD upgrade.

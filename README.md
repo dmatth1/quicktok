@@ -169,8 +169,8 @@ drops it below 2.2 MB/s):
 | HF tokenizers | 3.4 | 3.8 | 3.1 |
 
 quicktok's output was verified token-for-token identical to HF's on all three
-corpora, on NFC-normalized input — see the Qwen note in
-[Encodings](#encodings).
+raw corpora (quicktok implements the same NFC normalization HF runs — see the
+Qwen note in [Encodings](#encodings)).
 
 **Llama-4** — quicktok vs TokenDagger, on the vocab TokenDagger's own headline
 numbers come from (its native `CoreBPE`; both encoders verified token-for-token
@@ -251,7 +251,7 @@ Five encodings ship in the repo, each byte-exact vs its reference:
 | `o200k_base` | GPT-4o | tiktoken | ~85% of cl100k speed (2× vocab) |
 | `o200k_harmony` | GPT-OSS (20b/120b) | tiktoken | same pattern + ranks as o200k_base, extra chat specials |
 | `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
-| `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers; NFC note below |
+| `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers; NFC-normalizing |
 | `llama4` | Llama 4 | Meta tiktoken-rank | **not bundled** (gated — bring your own vocab, see below) |
 
 Load one by encoding name. The Python wheel bundles all the data files, so a name
@@ -266,12 +266,12 @@ auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, 
 ```
 
 - **Qwen2.5 / Qwen3** share one byte-level BPE; quicktok reproduces the Hugging
-  Face tokenizer byte-for-byte **on NFC-normalized input**. HF's pipeline runs an
-  NFC normalizer before tokenizing, which quicktok does not yet implement — input
-  containing non-NFC codepoints (rare: 6–450 bytes per 25 MB across our bench
-  corpora) tokenizes the raw bytes instead, and round-trips losslessly where HF's
-  output decodes to the normalized text. Apache-2.0; regenerate with
-  `tools/export_qwen.py --download`.
+  Face tokenizer byte-for-byte, including the **NFC normalization** its pipeline
+  runs before tokenizing. Clean input (the overwhelming majority) pays one cheap
+  scan; only spans containing non-NFC codepoints are normalized. Like the HF
+  reference, decode returns the normalized text for such input. Apache-2.0;
+  regenerate with `tools/export_qwen.py --download`; the NFC tables are pinned
+  and re-derivable (`tools/export_nfc.py verify`).
 - **o200k_harmony** is o200k_base plus the harmony chat specials (`<|start|>`,
   `<|channel|>`, `<|return|>`, …) — ordinary text encodes identically to o200k_base.
 - **Llama-3** reproduces Meta's original **tiktoken-rank** BPE byte-for-byte

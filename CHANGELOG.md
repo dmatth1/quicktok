@@ -13,11 +13,16 @@ versioning is [SemVer](https://semver.org).
   Reproduce with `bench/hf_qwen_bench.py`, `bench/llama4_bench.py`, and
   `bench/llamacpp_bench.cpp`.
 
-### Known limitations
-- `qwen3` does not yet apply the NFC normalization HF's pipeline runs before
-  tokenizing: output is byte-exact vs HF on NFC input; input with non-NFC
-  codepoints (rare) tokenizes the raw bytes instead. Found by the 25 MB
-  real-corpus exactness gate.
+### Fixed
+- **`qwen3` now applies NFC normalization** (the step HF's pipeline runs before
+  tokenizing), making it byte-exact vs the Hugging Face tokenizer on arbitrary
+  input — previously exact only on NFC input (gap found by the 25 MB real-corpus
+  exactness gate). Implementation is a quick-check fast path: clean input pays
+  one cheap scan (throughput unchanged, A/B-verified); only spans containing
+  non-NFC codepoints are normalized. Tables derived from Unicode 16 and pinned
+  (`data/nfc.bin` + `tools/export_nfc.py verify`); malformed UTF-8 passes
+  through normalization verbatim. Like HF, decode returns normalized text for
+  non-NFC input (decode→re-encode is idempotent; tested).
 
 ### Changed
 - **o200k-class encodings are faster** (o200k_base, o200k_harmony, Llama-4) —

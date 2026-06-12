@@ -58,9 +58,29 @@ def _qwen3(json_path):
     from tokenizers import Tokenizer
     hf = Tokenizer.from_file(json_path)
     enc_ord = lambda s: hf.encode(s, add_special_tokens=False).ids
+    # NFC regressions (explicit escapes — these strings must be NON-NFC):
+    # singleton U+2329/U+232A (the Common Crawl find), decomposed accents,
+    # decomposed Hangul jamo, marks out of canonical order, a mark with no
+    # composition (stays decomposed in NFC), dirty at start and end.
+    NFC_CASES = [
+        "variance \u2329*\u03be*~*i*\u232a done",
+        "cafe\u0301 ole cafe\u0301",
+        "\u1112\u1161\u11ab\u1100\u116e\u11a8\u110b\u1165",
+        "a\u0301\u031bz",
+        "x\u0367y",
+        "\u2329start endx\u0301",
+    ]
+    import unicodedata
+    # all but x+U+0367 must be genuinely non-NFC; that one is already-NFC text
+    # that still contains a "suspicious" codepoint (exercises the identity window)
+    for s in NFC_CASES:
+        if s == "x\u0367y":
+            assert unicodedata.normalize("NFC", s) == s
+        else:
+            assert unicodedata.normalize("NFC", s) != s, f"case is already NFC: {s!r}"
     QWEN_SP = ["<|im_start|>", "before<|im_end|>after", "a<|endoftext|><|im_start|>b",
                "no specials here", "<think>reasoning</think>"]
-    write_vectors(os.path.join(TESTDIR, "vectors_qwen3.bin"), CASES, enc_ord)
+    write_vectors(os.path.join(TESTDIR, "vectors_qwen3.bin"), CASES + NFC_CASES, enc_ord)
     write_vectors(os.path.join(TESTDIR, "vectors_qwen3_special.bin"), QWEN_SP, enc_ord)
 
 

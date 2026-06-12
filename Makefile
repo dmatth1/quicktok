@@ -57,7 +57,10 @@ OBJS := $(BUILD)/quicktok.o $(BUILD)/trie2_mb.o $(BUILD)/cabi.o
 all: lib
 lib: $(BUILD)/libquicktok.a $(LIB_SO)
 
-$(BUILD)/%.o: src/%.cpp | $(BUILD)
+# headers as prerequisites: any header edit rebuilds all TUs (small project —
+# correctness over incremental speed; a stale .o once produced a 6x-slower bench)
+HDRS := $(wildcard src/*.hpp include/*.hpp include/*.h)
+$(BUILD)/%.o: src/%.cpp $(HDRS) | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD)/libquicktok.a: $(OBJS)

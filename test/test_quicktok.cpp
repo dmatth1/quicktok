@@ -15,7 +15,8 @@ static std::vector<uint8_t> rd(const std::string& p) {
     std::vector<uint8_t> v(n); if (n && fread(v.data(), 1, n, f) != (size_t)n) exit(2); fclose(f); return v;
 }
 
-static int run_vectors(const quicktok::Tokenizer& tok, const std::string& path, bool special) {
+static int run_vectors(const quicktok::Tokenizer& tok, const std::string& path, bool special,
+                       bool nfc = false) {
     auto buf = rd(path);
     const uint8_t* p = buf.data(); uint32_t ncase; memcpy(&ncase, p, 4); p += 4;
     int fails = 0;
@@ -30,7 +31,11 @@ static int run_vectors(const quicktok::Tokenizer& tok, const std::string& path, 
         auto got = special ? tok.encode_with_special(text) : tok.encode(text);
         bool enc_ok = (got == ref);
         std::string back = tok.decode(got);
-        bool dec_ok = (back == text);
+        // NFC encodings normalize before tokenizing (like the HF reference), so
+        // decode returns NFC(text), not text — the invariant there is
+        // decode -> re-encode idempotence.
+        bool dec_ok = nfc ? ((special ? tok.encode_with_special(back) : tok.encode(back)) == got)
+                          : (back == text);
         if (!special && tok.count(text) != got.size()) { fails++; printf("  FAIL case %u: count mismatch\n", c); }
         if (!enc_ok || !dec_ok) {
             fails++;
@@ -87,9 +92,18 @@ int main(int argc, char** argv) {
     {
         auto qw = quicktok::Tokenizer::load_dir(data, "qwen3");
         printf("qwen3: vocab=%zu\n", qw.vocab_size());
-        fails += run_vectors(qw, "test/vectors_qwen3.bin", false);
-        fails += run_vectors(qw, "test/vectors_qwen3_special.bin", true);
-        if (!fails) printf("qwen3: vectors + specials exact\n");
+        fails += run_vectors(qw, "test/vectors_qwen3.bin", false, /*nfc=*/true);
+        fails += run_vectors(qw, "test/vectors_qwen3_special.bin", true, /*nfc=*/true);
+        if (!fails) printf("qwen3: vectors + specials exact (incl. non-NFC inputs)\n");
+
+        // invalid UTF-8 adjacent to a dirty codepoint: the malformed byte must
+        // survive normalization verbatim (windows carry raw bytes through)
+        std::string mixed = std::string("e\xcc\x81 ") + "\xff" + " e\xcc\x81 \xff";
+        auto ids = qw.encode(mixed);
+        std::string back = qw.decode(ids);
+        if (back.find('\xff') == std::string::npos || qw.encode(back) != ids) {
+            fails++; printf("  FAIL: qwen3 invalid-UTF-8-in-dirty-window not preserved\n");
+        } else printf("qwen3: NFC + invalid-UTF-8 passthrough OK\n");
     }
 
     // --- Llama-4 (optional): vocab is gated and not shipped. If a user has run

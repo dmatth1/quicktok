@@ -2,6 +2,7 @@
 #include "bpe.hpp"
 #include "pretok.hpp"
 #include "pretok_o200k.hpp"
+#include "nfc.hpp"
 #include <atomic>
 #include <cstring>
 #include <stdexcept>
@@ -11,6 +12,7 @@ namespace quicktok {
 using detail::Vocab;
 using detail::UClass;
 using detail::UClassO;
+using detail::NFC;
 
 struct Tokenizer::Impl {
     Vocab V;
@@ -18,8 +20,10 @@ struct Tokenizer::Impl {
     bool o200k = false;               // use the o200k pretok scanner (o200k_base, o200k_harmony, Llama-4)
     bool llama3 = false;              // cl100k grammar + o200k-style whitespace
     bool qwen = false;                // Llama-3 whitespace + single-digit \p{N} (Qwen2.5/Qwen3)
+    bool nfc = false;                 // reference pipeline NFC-normalizes first (Qwen)
     UClass U;                         // cl100k-pattern classes (L/N/S)
     UClassO UO;                       // o200k-pattern classes (L/N/S/UPPER/LOWER)
+    NFC nfcT;                         // loaded iff nfc
     std::vector<std::pair<std::string, uint32_t>> specials;   // sorted by id
 };
 
@@ -97,6 +101,10 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
         t.impl->V = Vocab::load((dir + "/qwen3.vocab").c_str());
         t.impl->U = UClass::load((dir + "/uniclass.bin").c_str());
         t.impl->qwen = true;
+        // Qwen's reference pipeline NFC-normalizes before tokenizing
+        // ("normalizer": {"type": "NFC"} in its tokenizer.json)
+        t.impl->nfcT = NFC::load((dir + "/nfc.bin").c_str());
+        t.impl->nfc = true;
         load_specials(dir + "/qwen3.special", t.impl->specials);
     } else {
         throw std::runtime_error("quicktok: unknown encoding: " + encoding +
@@ -125,13 +133,37 @@ static inline void merge_piece(const Vocab& V, const uint8_t* piece, size_t len,
     V.encode(piece, (uint32_t)len, out);
 }
 
+static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
+                        bool o200k, bool l3, bool qw,
+                        const uint8_t* t, uint32_t L, std::vector<uint32_t>& out);
+
 void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out) const {
     if (len > 0xFFFFFFFFull)
         throw std::invalid_argument("quicktok: input exceeds 4 GiB per encode() call — split it");
-    const Vocab& V = impl->V;
-    uint32_t L = (uint32_t)len, p = 0;
-    if (impl->o200k) {
-        const UClassO& U = impl->UO;
+    // NFC-normalizing encodings (Qwen): one cheap scan; only genuinely dirty
+    // input (rare) pays for a normalized copy. The normalized buffer goes to the
+    // core directly — NFC output can still contain combining marks, so it must
+    // not re-enter this check.
+    if (impl->nfc && !impl->nfcT.clean(t, len)) {
+        std::string norm;
+        norm.reserve(len + 16);
+        impl->nfcT.normalize(t, len, norm);
+        if (norm.size() > 0xFFFFFFFFull)
+            throw std::invalid_argument("quicktok: input exceeds 4 GiB after NFC normalization — split it");
+        encode_core(impl->V, impl->U, impl->UO, impl->o200k, impl->llama3, impl->qwen,
+                    (const uint8_t*)norm.data(), (uint32_t)norm.size(), out);
+        return;
+    }
+    encode_core(impl->V, impl->U, impl->UO, impl->o200k, impl->llama3, impl->qwen,
+                t, (uint32_t)len, out);
+}
+
+static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
+                        bool o200k, bool l3, bool qw,
+                        const uint8_t* t, uint32_t L, std::vector<uint32_t>& out) {
+    uint32_t p = 0;
+    if (o200k) {
+        const UClassO& U = Uo;
         while (p < L) {
             // ASCII-word fast path, fused (o200k flavor of the cl100k loop below).
             // For ASCII, UPPER==[A-Z] and LOWER==[a-z], so alts 1+2 reduce to: the
@@ -163,8 +195,7 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
     // cl100k / Llama-3 / Qwen: fused pretok+merge loop. The ASCII-word fast path is
     // identical for all three (same letter grammar); only the alt cascade in
     // pretok_next differs (whitespace style, and Qwen's single-digit numbers).
-    const UClass& U = impl->U;
-    const bool l3 = impl->llama3, qw = impl->qwen;
+    const UClass& U = Uc;
     while (p < L) {
         uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
         if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {       // ASCII word

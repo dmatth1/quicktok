@@ -7,11 +7,11 @@ bench/fetch_corpus.py; the quicktok side builds automatically.
 
 Method: single thread, best-of-N, MB/s. HF is timed per document (its best
 case — one 25 MB string drops it under ~2.2 MB/s from per-piece offset
-tracking). Exactness gate: HF runs an NFC normalizer before tokenizing, so
-quicktok encodes the NFC-normalized bytes and must match HF's ids
-token-for-token (see the Qwen note in the main README's Encodings section).
+tracking). Exactness gate: both encoders get the RAW corpus bytes; quicktok
+implements the same NFC normalization HF's pipeline runs, so the ids must match
+token-for-token.
 """
-import os, struct, subprocess, sys, time, unicodedata
+import os, struct, subprocess, sys, time
 
 BENCH = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(BENCH)
@@ -36,22 +36,21 @@ def main():
     hf = Tokenizer.from_file(QWEN_JSON)
 
     for c in corpora:
-        raw = open(os.path.join(CORPUS_DIR, c + ".txt"), "rb").read()
-        text = unicodedata.normalize("NFC", raw.decode("utf-8"))
-        nfc_path = os.path.join(CORPUS_DIR, c + ".nfc.txt")
-        open(nfc_path, "wb").write(text.encode("utf-8"))
-        mb = len(text.encode("utf-8")) / 1e6
-        print(f"\n### {c} ({mb:.1f} MB, NFC)")
+        path = os.path.join(CORPUS_DIR, c + ".txt")
+        raw = open(path, "rb").read()
+        text = raw.decode("utf-8")
+        mb = len(raw) / 1e6
+        print(f"\n### {c} ({mb:.1f} MB, raw)")
 
-        # reference ids (HF is the spec for qwen3)
+        # reference ids (HF is the spec for qwen3; it NFC-normalizes internally)
         ids = hf.encode(text, add_special_tokens=False).ids
         ids_path = os.path.join(CORPUS_DIR, f"{c}.qwen3.ids")
         with open(ids_path, "wb") as f:
             f.write(struct.pack("<I", len(ids)))
             f.write(struct.pack(f"<{len(ids)}I", *ids))
 
-        # quicktok (exact-checked against HF inside bench_file; nonzero exit on mismatch)
-        out = subprocess.run([bench_file, nfc_path, "qwen3", os.path.join(ROOT, "data"), ids_path],
+        # quicktok on the same RAW bytes (exact-checked inside bench_file)
+        out = subprocess.run([bench_file, path, "qwen3", os.path.join(ROOT, "data"), ids_path],
                              check=True, capture_output=True, text=True).stdout
         print(out.strip())
 
