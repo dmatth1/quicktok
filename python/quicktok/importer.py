@@ -50,7 +50,8 @@ def _resolve_source(source):
             sys.exit(f"{source!r} looks like a Hugging Face repo id — "
                      f"pip install huggingface_hub (and authenticate for gated repos), "
                      f"or pass a local tokenizer.json path.")
-        for fname in ("tokenizer.json", "tekken.json"):
+        # tekken.json first: Mistral repos carry both, and tekken is the native format
+        for fname in ("tekken.json", "tokenizer.json"):
             try:
                 return hf_hub_download(source, fname)
             except Exception:

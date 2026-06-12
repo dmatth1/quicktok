@@ -19,6 +19,8 @@ itself. See [benchmarks](#benchmarks).
 pip install quicktok-v1
 ```
 
+Wheels for Linux (x86_64, aarch64), macOS (arm64, x86_64), and Windows; Python ≥ 3.9.
+
 **C++** — via CMake (`find_package` or `FetchContent`), or `make install` and
 pkg-config. There's also a stable **C ABI** (`quicktok.h`) for FFI from any language.
 
@@ -38,7 +40,7 @@ text = enc.decode(ids)
 quicktok.encoding_for_model("meta-llama/Llama-3.1-8B").count("...")   # model-name lookup
 
 # other byte-level-BPE tokenizers: import once (exactness-verified), then use by name
-quicktok.import_tokenizer("path/to/tekken.json", "tekken")
+quicktok.import_tokenizer("mistralai/Mistral-Nemo-Instruct-2407", "tekken")  # HF repo id, URL, or local file
 quicktok.get_encoding("tekken")
 ```
 
@@ -57,6 +59,7 @@ counts = quicktok.count_batch(enc, docs)    # per-doc token counts for budgeting
 - `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
 - Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged. (NFC encodings decode valid-but-non-NFC input to its normalized form — see [Encodings](#encodings).)
 - Imported encodings are stored in `$QUICKTOK_DATA` (default `~/.cache/quicktok`); `get_encoding` finds them automatically.
+- `import_tokenizer` verifies against the model's own tokenizer, so the reference must be installed: `pip install tokenizers` (HF models) or `mistral-common` (Tekken) — plus `huggingface_hub` to fetch from a repo id (and its auth for gated repos).
 
 ## C++
 
@@ -269,15 +272,13 @@ gated. Each is byte-exact vs its reference:
   llama.cpp infer the same vocab from a merge list and agree on ~99.9998% of
   tokens; the rare differences are non-Latin+symbol sequences where rank order
   and merge order pick different splits.
-- **llama4** shares o200k_base's pretokenizer; export Meta's gated vocab
-  yourself, then load it:
-
-  ```sh
-  python tools/export_llama4.py <tokenizer.model> data
-  ```
-  ```python
-  enc = quicktok.get_encoding("llama4", "data")
-  ```
+- **llama4** shares o200k_base's pretokenizer, but Meta gates the vocab. With
+  repo access, import it like any other tokenizer —
+  `quicktok.import_tokenizer("meta-llama/Llama-4-Scout-17B-16E-Instruct", "llama4")`
+  (the import verifies, so a wrong guess can't ship; this checks against HF's
+  merge-list tokenizer, the same rank-vs-merges nuance as llama3). To match
+  Meta's original rank file instead, export from a checkout:
+  `python tools/export_llama4.py <tokenizer.model> data`.
 
 Vocabs regenerate from their references with `tools/export_*.py`; the Unicode and
 NFC tables are pinned, version-stamped, and exhaustively re-derivable
@@ -306,6 +307,8 @@ is compiled by hand, which is where the speed comes from.
   slots — exact vs `mistral-common`, at full o200k-class speed.
 - **DeepSeek V3/R1** is refused: a pipeline of three sequential Split regexes, a
   different grammar shape. Supporting it would be a new scanner, not an import.
+- **SentencePiece models** (Gemma, T5, Llama-2) are a different algorithm
+  entirely, not a missing grammar — out of scope.
 
 ## Notes
 
