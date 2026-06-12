@@ -4,6 +4,7 @@
 #include "pretok_o200k.hpp"
 #include "nfc.hpp"
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <thread>
@@ -20,7 +21,9 @@ struct Tokenizer::Impl {
     bool o200k = false;               // use the o200k pretok scanner (o200k_base, o200k_harmony, Llama-4)
     bool llama3 = false;              // cl100k grammar + o200k-style whitespace
     bool qwen = false;                // Llama-3 whitespace + single-digit \p{N} (Qwen2.5/Qwen3)
+    bool tekken = false;              // o200k grammar, no contractions, single-digit (Mistral Tekken)
     bool nfc = false;                 // reference pipeline NFC-normalizes first (Qwen)
+    uint32_t id_offset = 0;           // model ids = vocab rank + offset (Tekken reserves 1000 specials)
     UClass U;                         // cl100k-pattern classes (L/N/S)
     UClassO UO;                       // o200k-pattern classes (L/N/S/UPPER/LOWER)
     NFC nfcT;                         // loaded iff nfc
@@ -128,20 +131,22 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
             if (s.empty() || s[0] == '#') continue;
             if (s.rfind("scanner=", 0) == 0) scanner = s.substr(8);
             else if (s.rfind("nfc=", 0) == 0) nfc = (s.substr(4) == "1");
+            else if (s.rfind("id_offset=", 0) == 0) t.impl->id_offset = (uint32_t)strtoul(s.c_str() + 10, nullptr, 10);
             else { fclose(ef); throw std::runtime_error("quicktok: bad line in " + encpath + ": " + s); }
         }
         fclose(ef);
         t.impl->V = Vocab::load((dir + "/" + encoding + ".vocab").c_str());
-        if (scanner == "o200k") {
+        if (scanner == "o200k" || scanner == "tekken") {
             t.impl->UO = UClassO::load((dir + "/uniclass_o200k.bin").c_str());
             t.impl->o200k = true;
+            if (scanner == "tekken") t.impl->tekken = true;
         } else if (scanner == "cl100k" || scanner == "llama3" || scanner == "qwen") {
             t.impl->U = UClass::load((dir + "/uniclass.bin").c_str());
             if (scanner == "llama3") t.impl->llama3 = true;
             if (scanner == "qwen") t.impl->qwen = true;
         } else {
             throw std::runtime_error("quicktok: bad scanner in " + encpath + ": '" + scanner +
-                                     "' (cl100k | o200k | llama3 | qwen)");
+                                     "' (cl100k | o200k | llama3 | qwen | tekken)");
         }
         if (nfc) {
             t.impl->nfcT = NFC::load((dir + "/nfc.bin").c_str());
@@ -173,12 +178,13 @@ static inline void merge_piece(const Vocab& V, const uint8_t* piece, size_t len,
 }
 
 static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
-                        bool o200k, bool l3, bool qw,
+                        bool o200k, bool l3, bool qw, bool tk,
                         const uint8_t* t, uint32_t L, std::vector<uint32_t>& out);
 
 void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out) const {
     if (len > 0xFFFFFFFFull)
         throw std::invalid_argument("quicktok: input exceeds 4 GiB per encode() call — split it");
+    size_t start = out.size();
     // NFC-normalizing encodings (Qwen): one cheap scan; only genuinely dirty
     // input (rare) pays for a normalized copy. The normalized buffer goes to the
     // core directly — NFC output can still contain combining marks, so it must
@@ -189,16 +195,20 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
         impl->nfcT.normalize(t, len, norm);
         if (norm.size() > 0xFFFFFFFFull)
             throw std::invalid_argument("quicktok: input exceeds 4 GiB after NFC normalization — split it");
-        encode_core(impl->V, impl->U, impl->UO, impl->o200k, impl->llama3, impl->qwen,
+        encode_core(impl->V, impl->U, impl->UO, impl->o200k, impl->llama3, impl->qwen, impl->tekken,
                     (const uint8_t*)norm.data(), (uint32_t)norm.size(), out);
-        return;
+    } else {
+        encode_core(impl->V, impl->U, impl->UO, impl->o200k, impl->llama3, impl->qwen, impl->tekken,
+                    t, (uint32_t)len, out);
     }
-    encode_core(impl->V, impl->U, impl->UO, impl->o200k, impl->llama3, impl->qwen,
-                t, (uint32_t)len, out);
+    // encodings whose model ids are vocab rank + a constant (Tekken's 1000
+    // reserved control slots): translate once on output
+    if (impl->id_offset)
+        for (size_t i = start; i < out.size(); i++) out[i] += impl->id_offset;
 }
 
 static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
-                        bool o200k, bool l3, bool qw,
+                        bool o200k, bool l3, bool qw, bool tk,
                         const uint8_t* t, uint32_t L, std::vector<uint32_t>& out) {
     uint32_t p = 0;
     if (o200k) {
@@ -217,7 +227,7 @@ static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
                 uint32_t ue = detail::ascii_upper_run(t, ls, L);
                 uint32_t we = detail::ascii_lower_run(t, ue, L);
                 if (we == L || t[we] < 0x80) {
-                    if (we < L && t[we] == '\'') we = detail::o_contraction(t, we, L);
+                    if (!tk && we < L && t[we] == '\'') we = detail::o_contraction(t, we, L);
                     uint32_t wlen = we - p;
                     uint32_t first = V.next_match(t + p, wlen);
                     if (V.token_len(first) == wlen) out.push_back(first); // single token: fused
@@ -225,7 +235,8 @@ static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
                     p = we; continue;
                 }
             }
-            uint32_t l = detail::pretok_next_o200k(U, t, p, L);
+            uint32_t l = tk ? detail::pretok_next_tekken(U, t, p, L)
+                            : detail::pretok_next_o200k(U, t, p, L);
             if (!l) l = 1;
             merge_piece(V, t + p, l, out); p += l;
         }
@@ -317,14 +328,15 @@ size_t Tokenizer::count(std::string_view text) const {
 
 void Tokenizer::decode(const uint32_t* ids, size_t n, std::string& out) const {
     const Vocab& V = impl->V;
+    const uint32_t off = impl->id_offset;
     for (size_t i = 0; i < n; i++) {
-        uint32_t id = ids[i];
-        if (id < V.n) {
+        uint32_t id = ids[i] - off;          // off=0 for builtin encodings
+        if (ids[i] >= off && id < V.n) {
             out.append((const char*)V.all.data() + V.tstart[id], V.tstart[id+1] - V.tstart[id]);
             continue;
         }
         for (const auto& [s, sid] : impl->specials)
-            if (sid == id) { out.append(s); break; }
+            if (sid == ids[i]) { out.append(s); break; }   // specials carry MODEL ids (unshifted)
         // other out-of-range ids are skipped
     }
 }

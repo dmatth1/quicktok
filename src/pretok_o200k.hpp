@@ -99,8 +99,13 @@ static inline uint32_t o_contraction(const uint8_t* t, uint32_t e, uint32_t len)
     return e;
 }
 
-// Find ONE o200k pretoken starting at p; returns its byte length.
-static inline uint32_t pretok_next_o200k(const UClassO& U, const uint8_t* t, uint32_t p, uint32_t len) {
+// Find ONE o200k-family pretoken starting at p; returns its byte length.
+// Two parametric axes cover the family's known variants:
+//   CONTR        : alts 1&2 carry the (?i:'s|'t|'re|'ve|'m|'ll|'d)? suffix
+//                  (o200k/Llama-4: yes; Mistral Tekken: no)
+//   SINGLE_DIGIT : alt 3 is \p{N} (Tekken) vs \p{N}{1,3} (o200k)
+template <bool CONTR, bool SINGLE_DIGIT>
+static inline uint32_t pretok_next_o200k_impl(const UClassO& U, const uint8_t* t, uint32_t p, uint32_t len) {
     uint8_t b = t[p];
     uint32_t nb; uint32_t cp = u8dec(t, p, len, &nb);
     // --- alts 1 & 2 (letters), each tried prefix-consumed-first then prefix-empty ---
@@ -109,10 +114,11 @@ static inline uint32_t pretok_next_o200k(const UClassO& U, const uint8_t* t, uin
         uint32_t e = 0;
         if (prefelig) e = alt==0 ? o_matchUL(U,t,p+nb,len) : o_matchUpL(U,t,p+nb,len);   // prefix consumed
         if (e==0)     e = alt==0 ? o_matchUL(U,t,p,len)     : o_matchUpL(U,t,p,len);       // prefix empty
-        if (e>0) { e = o_contraction(t, e, len); return e - p; }
+        if (e>0) { if constexpr (CONTR) e = o_contraction(t, e, len); return e - p; }
     }
-    // --- alt 3: \p{N}{1,3} ---
+    // --- alt 3: \p{N}{1,3}  (SINGLE_DIGIT: \p{N}) ---
     if (U.isN(cp)) {
+        if constexpr (SINGLE_DIGIT) return nb;
         uint32_t q=p, cnt=0;
         while (q<len && cnt<3) { uint32_t n2; uint32_t c2=u8dec(t,q,len,&n2); if(U.isN(c2)){q+=n2;cnt++;} else break; }
         return q - p;
@@ -135,6 +141,13 @@ static inline uint32_t pretok_next_o200k(const UClassO& U, const uint8_t* t, uin
         if (e - p > lastlen)     return (e-lastlen) - p;  // alt6 \s+(?!\S), all but last ws char
         return e - p;                                     // alt7 \s+ (single ws char before non-ws)
     }
+}
+
+static inline uint32_t pretok_next_o200k(const UClassO& U, const uint8_t* t, uint32_t p, uint32_t len) {
+    return pretok_next_o200k_impl<true, false>(U, t, p, len);    // o200k / Llama-4
+}
+static inline uint32_t pretok_next_tekken(const UClassO& U, const uint8_t* t, uint32_t p, uint32_t len) {
+    return pretok_next_o200k_impl<false, true>(U, t, p, len);    // Mistral Tekken v3
 }
 
 }  // namespace detail

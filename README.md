@@ -306,12 +306,24 @@ enc = quicktok.get_encoding("myenc", "data")
 
 The tool parses the tokenizer config (HF `tokenizer.json` or Mistral-style
 `tekken.json`), checks the normalizer (none/NFC), classifies the pretokenizer
-regex against the supported grammars, writes the data files, then encodes a
-stress suite (plus any `--corpus` files) with both the reference tokenizer and
-quicktok and compares token-for-token. **A mismatch fails the import** — there
-is no slow fallback and no approximate mode; an unrecognized pattern is refused
-with the pattern printed, because each grammar is compiled by hand (that's where
-the speed comes from).
+regex against the supported grammars (cl100k / o200k / llama3 / qwen / tekken),
+writes the data files, then encodes a stress suite (plus any `--corpus` files)
+with both the reference tokenizer and quicktok and compares token-for-token.
+**A mismatch fails the import** — there is no slow fallback and no approximate
+mode; an unrecognized pattern is refused with the pattern printed, because each
+grammar is compiled by hand (that's where the speed comes from).
+
+Both outcomes, demonstrated on real configs:
+
+- **Mistral Tekken v3** imports and verifies — its pattern is the o200k grammar
+  minus contractions with single-digit numbers, and its 1,000 reserved
+  special-token slots are handled (`id_offset`), so the ids match
+  `mistral-common` exactly (verified against it). Runs at full o200k-class
+  speed (~103 MB/s on The Pile, M1).
+- **DeepSeek V3/R1** is refused: it pretokenizes with a pipeline of three
+  sequential Split regexes over `\p{P}`/`\p{S}` classes — a different grammar
+  shape, printed in full by the refusal. Supporting it would be a deliberate
+  new scanner, not an import.
 
 ## Notes
 

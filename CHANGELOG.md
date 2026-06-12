@@ -16,12 +16,18 @@ versioning is [SemVer](https://semver.org).
 ### Added
 - **Tokenizer importer with built-in verification** (`tools/import_tokenizer.py`):
   imports any byte-level-BPE `tokenizer.json` / `tekken.json` whose pretokenizer
-  matches a supported grammar (cl100k / o200k / llama3 / qwen) and whose
+  matches a supported grammar (cl100k / o200k / llama3 / qwen / tekken) and whose
   normalizer is none/NFC. Emits `<name>.{vocab,special,enc}`; `load_dir` loads
   non-builtin names via the `.enc` sidecar. The import encodes a stress suite
   plus optional corpora with the reference and with quicktok (real library, via
   the C ABI) and fails on any token mismatch — no fallback modes, unrecognized
   patterns are refused with the pattern printed.
+- **Mistral Tekken v3 support** (via the importer): the tekken pattern is the
+  o200k grammar minus contractions with single-digit `\p{N}` — now a parametric
+  scanner variant — and Tekken's 1,000 reserved special slots are handled with
+  an id offset, so ids match `mistral-common` exactly (verified, 471k tokens).
+  Full o200k-class speed. DeepSeek V3/R1 is the documented refusal case: a
+  3-stage sequential-Split pipeline, structurally a different grammar.
 
 ### Fixed
 - **`qwen3` now applies NFC normalization** (the step HF's pipeline runs before

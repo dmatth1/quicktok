@@ -40,11 +40,14 @@ CL100K_PAT_POSSESSIVE = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N
 O200K_PAT = r"""[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 LLAMA3_PAT = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 QWEN_PAT = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
+# Tekken v3: the o200k case-aware grammar minus the contraction suffix, with \p{N}
+TEKKEN_PAT = r"""[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 
 KNOWN_PATTERNS = {
     QWEN_PAT: "qwen",      # before llama3: identical except \p{N} (single digit)
-    LLAMA3_PAT: "llama3",  # == CL100K_PAT string; scanner choice below disambiguates
+    LLAMA3_PAT: "llama3",
     O200K_PAT: "o200k",
+    TEKKEN_PAT: "tekken",
     CL100K_PAT_POSSESSIVE: "cl100k",
 }
 
@@ -77,8 +80,9 @@ def gpt2_byte_decoder():
 def parse_hf(path):
     j = json.load(open(path))
     norm = j.get("normalizer")
-    if norm is None:
-        nfc = False
+    if norm is None or (isinstance(norm, dict) and norm.get("type") == "Sequence"
+                        and not norm.get("normalizers")):
+        nfc = False   # absent, or an empty Sequence (a no-op, e.g. DeepSeek)
     elif isinstance(norm, dict) and norm.get("type") == "NFC":
         nfc = True
     else:
@@ -88,10 +92,16 @@ def parse_hf(path):
     # pre_tokenizer: find the Split(Regex) (possibly inside a Sequence with ByteLevel)
     pt = j.get("pre_tokenizer") or {}
     nodes = pt.get("pretokenizers", [pt]) if pt.get("type") == "Sequence" else [pt]
-    pattern, bytelevel = None, False
+    splits = [(nd.get("pattern") or {}).get("Regex") for nd in nodes if nd.get("type") == "Split"]
+    if len(splits) > 1:
+        sys.exit("REFUSED: this tokenizer pretokenizes with a PIPELINE of "
+                 f"{len(splits)} sequential Split regexes — a different grammar "
+                 "shape, not a variant of a supported one. Patterns:\n  " +
+                 "\n  ".join(repr(s) for s in splits))
+    pattern, bytelevel = (splits[0] if splits else None), False
     for nd in nodes:
         if nd.get("type") == "Split":
-            pattern = (nd.get("pattern") or {}).get("Regex")
+            pass
         elif nd.get("type") == "ByteLevel":
             bytelevel = True
             if nd.get("add_prefix_space"):
@@ -114,7 +124,7 @@ def parse_hf(path):
         except KeyError:
             pass
     specials = {t["content"]: t["id"] for t in j.get("added_tokens", [])}
-    return ranks, specials, pattern, nfc, "hf"
+    return ranks, specials, pattern, nfc, 0
 
 
 def parse_tekken(path):
@@ -123,17 +133,20 @@ def parse_tekken(path):
     pattern = cfg.get("pattern")
     if not pattern:
         sys.exit("REFUSED: tekken.json without config.pattern.")
-    nv = cfg.get("default_num_special_tokens", 0)
+    n_special = cfg.get("default_num_special_tokens", 0)
+    # model ids = vocab rank + n_special; only the first
+    # (default_vocab_size - n_special) vocab entries are live at default size
+    n_live = cfg.get("default_vocab_size", 0) - n_special
     ranks, specials = {}, {}
     for ent in j.get("vocab", []):
-        # tekken ids are offset by the special-token block at the front
-        ranks[base64.b64decode(ent["token_bytes"])] = ent["rank"]
+        if ent["rank"] < n_live:
+            ranks[base64.b64decode(ent["token_bytes"])] = ent["rank"]
     for s in j.get("special_tokens", []) or []:
         specials[s.get("token_str") or s.get("content", f"<special_{s['rank']}>")] = s["rank"]
-    return ranks, specials, pattern, False, ("tekken", nv)
+    return ranks, specials, pattern, False, n_special
 
 
-def write_files(data_dir, name, ranks, specials, scanner, nfc):
+def write_files(data_dir, name, ranks, specials, scanner, nfc, id_offset=0):
     recs = sorted(ranks.items(), key=lambda kv: kv[1])
     with open(os.path.join(data_dir, name + ".vocab"), "wb") as f:
         f.write(struct.pack("<I", len(recs)))
@@ -150,6 +163,8 @@ def write_files(data_dir, name, ranks, specials, scanner, nfc):
         f.write(f"scanner={scanner}\n")
         if nfc:
             f.write("nfc=1\n")
+        if id_offset:
+            f.write(f"id_offset={id_offset}\n")
 
 
 class QT:
@@ -188,7 +203,7 @@ def main():
 
     is_tekken = "tekken" in os.path.basename(a.source).lower()
     parsed = parse_tekken(a.source) if is_tekken else parse_hf(a.source)
-    ranks, specials, pattern, nfc, kind = parsed
+    ranks, specials, pattern, nfc, id_offset = parsed
 
     scanner = KNOWN_PATTERNS.get(pattern)
     if scanner is None:
@@ -201,11 +216,12 @@ def main():
     # the cl100k-string vs llama3 ambiguity is real: identical regex, but tiktoken's
     # cl100k uses possessive quantifiers with different whitespace endings. The HF
     # Split form matches llama3/qwen semantics; keep the mapping as classified.
-    print(f"classified pretokenizer -> scanner '{scanner}'  (nfc={'yes' if nfc else 'no'})")
+    print(f"classified pretokenizer -> scanner '{scanner}'  (nfc={'yes' if nfc else 'no'}"
+          + (f", id_offset={id_offset}" if id_offset else "") + ")")
     if max(ranks.values()) >= (1 << 18):
         sys.exit(f"REFUSED: max token id {max(ranks.values())} exceeds the 18-bit engine limit.")
 
-    write_files(a.data_dir, a.name, ranks, specials, scanner, nfc)
+    write_files(a.data_dir, a.name, ranks, specials, scanner, nfc, id_offset)
     print(f"wrote {a.name}.vocab ({len(ranks)} tokens), .special ({len(specials)}), .enc")
 
     # ---- verification (the point of this tool) ----
@@ -219,10 +235,22 @@ def main():
     qt = QT(lib, a.data_dir, a.name)
 
     if is_tekken:
-        import tiktoken
-        enc = tiktoken.Encoding(name=a.name, pat_str=pattern, mergeable_ranks=ranks,
-                                special_tokens={})
-        ref_encode = lambda s: enc.encode_ordinary(s)
+        # preferred oracle: mistral-common (Mistral's own tokenizer — real model
+        # ids, including the special-token offset). Fallback: tiktoken over the
+        # same ranks + the offset (the construction tekken documents).
+        try:
+            from mistral_common.tokens.tokenizers.tekken import Tekkenizer, SpecialTokenPolicy
+            tk = Tekkenizer.from_file(a.source)
+            tk.special_token_policy = SpecialTokenPolicy.IGNORE
+            ref_encode = lambda s: tk.encode(s, bos=False, eos=False)
+            print("reference: mistral-common Tekkenizer")
+        except ImportError:
+            import tiktoken
+            enc = tiktoken.Encoding(name=a.name, pat_str=pattern, mergeable_ranks=ranks,
+                                    special_tokens={})
+            ref_encode = lambda s: [i + id_offset for i in enc.encode_ordinary(s)]
+            print("reference: tiktoken construction + id offset "
+                  "(pip install mistral-common for the authoritative oracle)")
     else:
         from tokenizers import Tokenizer
         hf = Tokenizer.from_file(a.source)
