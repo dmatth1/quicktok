@@ -59,7 +59,8 @@ enc.encode_batch(chats, with_special=True)  # chat-templated data: "<|im_start|>
 ```
 
 - `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
-- Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged. (NFC encodings decode valid-but-non-NFC input to its normalized form — see [Encodings](#encodings).)
+- Any byte sequence is accepted. `decode()` returns `str` with `errors="replace"` and raises `KeyError` on unknown ids — both as in tiktoken; `decode_bytes()` returns the exact bytes, so encode → decode_bytes round-trips any input losslessly. (NFC encodings decode valid-but-non-NFC input to its normalized form — see [Encodings](#encodings).)
+- tiktoken-parity surface: `n_vocab` (max id + 1, specials included), `eot_token`, `special_tokens_set`, `decode_single_token_bytes`, `encode_ordinary`.
 - Imported encodings are stored in `$QUICKTOK_DATA` (default `~/.cache/quicktok`); `get_encoding` finds them automatically.
 - `import_tokenizer` verifies against the model's own tokenizer, so the reference must be installed: `pip install tokenizers` (HF models) or `mistral-common` (Tekken) — plus `huggingface_hub` to fetch from a repo id (and its auth for gated repos).
 
@@ -101,7 +102,9 @@ class Tokenizer {
     std::string decode(const std::vector<uint32_t>& ids) const;         // handles special ids too
     void decode(const uint32_t* ids, size_t n, std::string& out) const;
 
-    size_t vocab_size() const;
+    size_t vocab_size() const;     // base vocab; n_vocab() = max id + 1 incl. specials
+    size_t n_vocab() const;
+    const std::vector<std::pair<std::string, uint32_t>>& special_tokens() const;
     const std::string& encoding() const;
 };
 }

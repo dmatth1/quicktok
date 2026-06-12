@@ -22,6 +22,7 @@ import os
 import sys
 
 from . import _import_core as core
+from ._import_core import ImportRefused
 
 
 def data_home():
@@ -47,17 +48,21 @@ def _resolve_source(source):
         try:
             from huggingface_hub import hf_hub_download
         except ImportError:
-            sys.exit(f"{source!r} looks like a Hugging Face repo id — "
+            raise ImportRefused(f"{source!r} looks like a Hugging Face repo id — "
                      f"pip install huggingface_hub (and authenticate for gated repos), "
                      f"or pass a local tokenizer.json path.")
         # tekken.json first: Mistral repos carry both, and tekken is the native format
+        from huggingface_hub.errors import EntryNotFoundError
         for fname in ("tekken.json", "tokenizer.json"):
             try:
                 return hf_hub_download(source, fname)
-            except Exception:
-                continue
-        sys.exit(f"no tokenizer.json or tekken.json found in {source!r}")
-    sys.exit(f"source not found: {source!r}")
+            except EntryNotFoundError:
+                continue   # this file isn't in the repo; try the next
+            except Exception as e:
+                # auth / gating / missing repo must NOT masquerade as "file not found"
+                raise ImportRefused(f"could not fetch from {source!r}: {type(e).__name__}: {e}") from e
+        raise ImportRefused(f"no tokenizer.json or tekken.json found in {source!r}")
+    raise ImportRefused(f"source not found: {source!r}")
 
 
 def import_tokenizer(source, name, data_dir=None, corpus=()):
@@ -71,13 +76,13 @@ def import_tokenizer(source, name, data_dir=None, corpus=()):
 
     scanner = core.KNOWN_PATTERNS.get(pattern)
     if scanner is None:
-        sys.exit("REFUSED: unrecognized pretokenizer pattern — quicktok compiles each\n"
+        raise ImportRefused("REFUSED: unrecognized pretokenizer pattern — quicktok compiles each\n"
                  "grammar by hand (no general regex engine; that is why it is fast).\n"
                  "If this model matters, file an issue with the pattern below.\n\n"
                  f"  pattern: {pattern}\n\n"
                  "  supported grammars: cl100k, o200k (Llama-4), llama3, qwen, tekken")
     if max(ranks.values()) >= (1 << 18):
-        sys.exit(f"REFUSED: max token id {max(ranks.values())} exceeds the 18-bit engine limit.")
+        raise ImportRefused(f"REFUSED: max token id {max(ranks.values())} exceeds the 18-bit engine limit.")
 
     out = data_dir or data_home()
     bundled = os.path.join(os.path.dirname(__file__), "data")
@@ -98,14 +103,14 @@ def import_tokenizer(source, name, data_dir=None, corpus=()):
             try:
                 import tiktoken
             except ImportError:
-                sys.exit("verification needs a reference: pip install mistral-common (preferred) or tiktoken")
+                raise ImportRefused("verification needs a reference: pip install mistral-common (preferred) or tiktoken")
             enc = tiktoken.Encoding(name=name, pat_str=pattern, mergeable_ranks=ranks, special_tokens={})
             ref_encode = lambda s: [i + id_offset for i in enc.encode_ordinary(s)]
     else:
         try:
             from tokenizers import Tokenizer as HFTok
         except ImportError:
-            sys.exit("verification needs the reference: pip install tokenizers")
+            raise ImportRefused("verification needs the reference: pip install tokenizers")
         hf = HFTok.from_file(path)
         ref_encode = lambda s: hf.encode(s, add_special_tokens=False).ids
 
@@ -120,7 +125,7 @@ def import_tokenizer(source, name, data_dir=None, corpus=()):
             bad += 1
     if bad:
         os.remove(os.path.join(out, name + ".enc"))
-        sys.exit(f"VERIFICATION FAILED: {bad}/{len(texts)} inputs diverged — removed {name}.enc.")
+        raise ImportRefused(f"VERIFICATION FAILED: {bad}/{len(texts)} inputs diverged — removed {name}.enc.")
     print(f"VERIFIED: {total} tokens across {len(texts)} inputs, all byte-exact. "
           f"Use quicktok.get_encoding({name!r}).")
     return out
@@ -133,7 +138,10 @@ def main(argv=None):
     ap.add_argument("--data-dir", default=None)
     ap.add_argument("--corpus", nargs="*", default=[])
     a = ap.parse_args(argv)
-    import_tokenizer(a.source, a.name, a.data_dir, a.corpus)
+    try:
+        import_tokenizer(a.source, a.name, a.data_dir, a.corpus)
+    except ImportRefused as e:
+        sys.exit(str(e))
 
 
 if __name__ == "__main__":

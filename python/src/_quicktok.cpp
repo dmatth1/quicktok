@@ -33,15 +33,43 @@ public:
         py::gil_scoped_release rel;
         return tok.count(std::string_view(s));
     }
+    void check_ids(const std::vector<uint32_t>& ids) const {
+        for (uint32_t id : ids)
+            if (!tok.known_id(id))
+                throw py::key_error("token id " + std::to_string(id) + " is not in the vocabulary");
+    }
     py::bytes decode_bytes(const std::vector<uint32_t>& ids) const {
+        check_ids(ids);
         std::string out;
         { py::gil_scoped_release rel; tok.decode(ids.data(), ids.size(), out); }
         return py::bytes(out);
     }
-    std::string decode(const std::vector<uint32_t>& ids) const {
+    py::str decode(const std::vector<uint32_t>& ids, const std::string& errors) const {
+        check_ids(ids);
         std::string out;
         { py::gil_scoped_release rel; tok.decode(ids.data(), ids.size(), out); }
-        return out;   // utf-8 -> str
+        // tiktoken parity: decode() defaults to errors="replace" (lossy on tokens
+        // that split a UTF-8 character); use decode_bytes() for the exact bytes.
+        PyObject* s = PyUnicode_DecodeUTF8(out.data(), (Py_ssize_t)out.size(), errors.c_str());
+        if (!s) throw py::error_already_set();
+        return py::reinterpret_steal<py::str>(s);
+    }
+    py::bytes decode_single_token_bytes(uint32_t id) const {
+        check_ids({id});
+        std::string out;
+        tok.decode(&id, 1, out);
+        return py::bytes(out);
+    }
+    uint32_t eot_token() const {
+        for (const char* name : {"<|endoftext|>", "<|end_of_text|>", "</s>"})
+            for (const auto& [s, sid] : tok.special_tokens())
+                if (s == name) return sid;
+        throw py::key_error("this encoding has no end-of-text special token");
+    }
+    py::set special_tokens_set() const {
+        py::set out;
+        for (const auto& [s, sid] : tok.special_tokens()) out.add(py::str(s));
+        return out;
     }
     // flat batch: encode in parallel (GIL released), return one contiguous uint32
     // token buffer + an int64 offsets array (len n+1) instead of n Python lists.
@@ -70,6 +98,7 @@ public:
         return py::make_tuple(std::move(tokens), std::move(offsets));
     }
     size_t vocab_size() const { return tok.vocab_size(); }
+    size_t n_vocab() const { return tok.n_vocab(); }
     std::string name() const { return tok.encoding(); }
 
 private:
@@ -96,11 +125,19 @@ PYBIND11_MODULE(_quicktok, m) {
              "doc i is tokens[offsets[i]:offsets[i+1]]. with_special=True parses "
              "special-token strings (chat-templated data).")
         .def("count", &PyTokenizer::count, py::arg("text"))
-        .def("decode", &PyTokenizer::decode, py::arg("ids"),
-             "Decode ids -> str (utf-8).")
+        .def("decode", &PyTokenizer::decode, py::arg("ids"), py::arg("errors") = "replace",
+             "Decode ids -> str. Unknown ids raise KeyError; tokens that split a "
+             "UTF-8 character decode per `errors` (default 'replace', like tiktoken).")
         .def("decode_bytes", &PyTokenizer::decode_bytes, py::arg("ids"),
-             "Decode ids -> bytes (never fails on partial multibyte sequences).")
+             "Decode ids -> exact bytes (lossless). Unknown ids raise KeyError.")
+        .def("decode_single_token_bytes", &PyTokenizer::decode_single_token_bytes, py::arg("id"),
+             "Bytes of one token id (KeyError if unknown) — matches tiktoken's name.")
+        .def_property_readonly("eot_token", &PyTokenizer::eot_token,
+             "Id of the end-of-text special token (KeyError if the encoding has none).")
+        .def_property_readonly("special_tokens_set", &PyTokenizer::special_tokens_set,
+             "The special-token strings of this encoding, as a set.")
         .def_property_readonly("name", &PyTokenizer::name)
-        .def_property_readonly("n_vocab", &PyTokenizer::vocab_size)
+        .def_property_readonly("n_vocab", &PyTokenizer::n_vocab,
+             "Max token id + 1, specials included (tiktoken semantics; cl100k -> 100277).")
         .def("__repr__", [](const PyTokenizer& t){ return "<quicktok.Tokenizer '" + t.name() + "'>"; });
 }

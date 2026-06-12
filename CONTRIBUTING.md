@@ -10,7 +10,7 @@ make test          # C++ + C ABI, all encodings exact vs committed vectors
 make bench         # native throughput + parallel scaling
 ```
 
-`make test` is the gate: it verifies every encoding against tiktoken-derived vectors
+`make test` is the gate: it verifies every encoding against reference-derived vectors (tiktoken / Hugging Face / Meta)
 and round-trips decode. CI also runs ASan+UBSan and a cross-platform build matrix.
 
 ## Ground rules

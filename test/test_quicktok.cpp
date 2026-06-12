@@ -121,6 +121,20 @@ int main(int argc, char** argv) {
         }
     }
 
+    // --- id-space surface: n_vocab is tiktoken's (max id + 1, incl. specials) ---
+    {
+        if (tok.n_vocab() != 100277 || tok.vocab_size() != 100256) {
+            fails++; printf("  FAIL: cl100k n_vocab/vocab_size = %zu/%zu (want 100277/100256)\n",
+                            tok.n_vocab(), tok.vocab_size());
+        }
+        auto h = quicktok::Tokenizer::load_dir(data, "o200k_harmony");
+        if (h.n_vocab() != 201088) { fails++; printf("  FAIL: harmony n_vocab=%zu (want 201088)\n", h.n_vocab()); }
+        if (!tok.known_id(100257) || tok.known_id(999999) || tok.special_tokens().empty()) {
+            fails++; printf("  FAIL: known_id/special_tokens surface wrong\n");
+        }
+        if (!fails) printf("id surface: OK (n_vocab incl. specials, known_id, special_tokens)\n");
+    }
+
     // --- error handling: loads must THROW (never exit/crash) on bad inputs ---
     {
         bool threw = false;

@@ -33,6 +33,9 @@ int qt_decode(const qt_tokenizer* t, const uint32_t* ids, size_t n,
               char** out, size_t* outlen);
 void qt_str_free(char* s);
 
+/* There is no batch call in the C ABI: a qt_tokenizer handle is safe to use
+ * from many threads concurrently, so batch = your threads + qt_encode. */
+
 /* Token count of text, or (size_t)-1 on error. */
 size_t qt_count(const qt_tokenizer* t, const char* text, size_t len);
 

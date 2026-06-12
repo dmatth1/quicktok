@@ -5,6 +5,22 @@ versioning is [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **tiktoken-parity surface in Python**: `n_vocab` now means max token id + 1
+  *including specials* (cl100k -> 100277, matching tiktoken — it previously
+  returned the 100256 base count, a silent embedding-sizing footgun);
+  `eot_token`, `special_tokens_set`, and `decode_single_token_bytes`;
+  `decode()` raises `KeyError` on unknown ids (was: silently skipped) and takes
+  `errors=` (default `"replace"`, like tiktoken) for tokens that split a UTF-8
+  character — `decode_bytes()` remains the lossless path. C++ gains `n_vocab()`,
+  `special_tokens()`, `known_id()`; `vocab_size()` keeps base-count semantics.
+- `quicktok.import_tokenizer()` raises a catchable `ImportRefused(ValueError)`
+  instead of calling `sys.exit` (the CLIs still exit nonzero); Hugging Face
+  auth/gating errors are reported as such instead of "file not found"; specials
+  beyond the loader caps are refused at import time with the offending token
+  named; `python -m quicktok.import_tokenizer` works as an alias.
+
+
 ### Changed
 - **Single-pass product machines for both pretok families** — `encode_core` now
   owns the full ASCII grammar inline (cl100k/Llama-3/Qwen family: standalone

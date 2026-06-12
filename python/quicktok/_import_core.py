@@ -5,6 +5,12 @@ verification stress suite. No compiled-extension imports — safe to load from a
 source tree. See tools/import_tokenizer.py for the full design rationale."""
 import base64, json, os, struct, sys
 
+
+class ImportRefused(ValueError):
+    """An import was refused or failed verification. Raised (not sys.exit) so
+    quicktok.import_tokenizer() is usable from scripts and notebooks; the CLIs
+    catch it and exit."""
+
 # The exact pretokenizer regexes quicktok has hand-compiled scanners for.
 # Keys are the literal pattern strings as they appear in the wild. (tiktoken's
 # cl100k pattern is the possessive variant; the lazy Split form of the same
@@ -59,7 +65,7 @@ def parse_hf(path):
     elif isinstance(norm, dict) and norm.get("type") == "NFC":
         nfc = True
     else:
-        sys.exit(f"REFUSED: unsupported normalizer {json.dumps(norm)[:120]} — "
+        raise ImportRefused(f"REFUSED: unsupported normalizer {json.dumps(norm)[:120]} — "
                  f"quicktok implements none/NFC. Wrong normalization would be a "
                  f"silent exactness bug, so this import stops here.")
     # pre_tokenizer: find the Split(Regex) (possibly inside a Sequence with ByteLevel)
@@ -67,7 +73,7 @@ def parse_hf(path):
     nodes = pt.get("pretokenizers", [pt]) if pt.get("type") == "Sequence" else [pt]
     splits = [(nd.get("pattern") or {}).get("Regex") for nd in nodes if nd.get("type") == "Split"]
     if len(splits) > 1:
-        sys.exit("REFUSED: this tokenizer pretokenizes with a PIPELINE of "
+        raise ImportRefused("REFUSED: this tokenizer pretokenizes with a PIPELINE of "
                  f"{len(splits)} sequential Split regexes — a different grammar "
                  "shape, not a variant of a supported one. Patterns:\n  " +
                  "\n  ".join(repr(s) for s in splits))
@@ -78,17 +84,17 @@ def parse_hf(path):
         elif nd.get("type") == "ByteLevel":
             bytelevel = True
             if nd.get("add_prefix_space"):
-                sys.exit("REFUSED: ByteLevel add_prefix_space=true is not supported.")
+                raise ImportRefused("REFUSED: ByteLevel add_prefix_space=true is not supported.")
             if nd.get("use_regex") and pattern is None:
                 pattern = "GPT2_BYTELEVEL_DEFAULT"   # gpt2-style internal regex
         else:
-            sys.exit(f"REFUSED: unsupported pre_tokenizer node {nd.get('type')!r}.")
+            raise ImportRefused(f"REFUSED: unsupported pre_tokenizer node {nd.get('type')!r}.")
     if not bytelevel:
-        sys.exit("REFUSED: not a byte-level BPE (no ByteLevel pre_tokenizer/decoder).")
+        raise ImportRefused("REFUSED: not a byte-level BPE (no ByteLevel pre_tokenizer/decoder).")
     if j.get("model", {}).get("type") != "BPE":
-        sys.exit(f"REFUSED: model.type={j.get('model',{}).get('type')!r}, need BPE.")
+        raise ImportRefused(f"REFUSED: model.type={j.get('model',{}).get('type')!r}, need BPE.")
     if j["model"].get("byte_fallback"):
-        sys.exit("REFUSED: byte_fallback BPE is not supported.")
+        raise ImportRefused("REFUSED: byte_fallback BPE is not supported.")
     inv = gpt2_byte_decoder()
     ranks = {}
     for s, i in j["model"]["vocab"].items():
@@ -105,7 +111,7 @@ def parse_tekken(path):
     cfg = j.get("config", {})
     pattern = cfg.get("pattern")
     if not pattern:
-        sys.exit("REFUSED: tekken.json without config.pattern.")
+        raise ImportRefused("REFUSED: tekken.json without config.pattern.")
     n_special = cfg.get("default_num_special_tokens", 0)
     # model ids = vocab rank + n_special; only the first
     # (default_vocab_size - n_special) vocab entries are live at default size
@@ -126,6 +132,12 @@ def write_files(data_dir, name, ranks, specials, scanner, nfc, id_offset=0):
         for raw, r in recs:
             f.write(struct.pack("<H", len(raw))); f.write(raw); f.write(struct.pack("<I", r))
     sp = sorted(specials.items(), key=lambda kv: kv[1])
+    if len(sp) > 4096:
+        raise ImportRefused(f"REFUSED: {len(sp)} special tokens exceeds the loader cap (4096).")
+    for tok, tid in sp:
+        if not 0 < len(tok.encode()) <= 64:
+            raise ImportRefused(f"REFUSED: special token {tok!r} is {len(tok.encode())} bytes; "
+                                f"the loader caps specials at 64 bytes.")
     with open(os.path.join(data_dir, name + ".special"), "wb") as f:
         f.write(struct.pack("<I", len(sp)))
         for tok, tid in sp:

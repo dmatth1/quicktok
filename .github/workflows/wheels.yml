@@ -26,7 +26,7 @@ jobs:
             enc=quicktok.get_encoding('o200k_base');
             s='wheel smoke: café 日本語 🚀 123';
             assert enc.decode(enc.encode(s))==s and enc.count(s)>0;
-            assert quicktok.get_encoding('cl100k_base').n_vocab==100256;
+            assert quicktok.get_encoding('cl100k_base').n_vocab==100277;
             print('wheel OK')"
       - uses: actions/upload-artifact@v4
         with:

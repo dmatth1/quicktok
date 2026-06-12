@@ -48,7 +48,13 @@ public:
     std::string decode(const std::vector<uint32_t>& ids) const;
 
     size_t vocab_size() const;          // base vocabulary size (excludes specials)
+    size_t n_vocab() const;             // tiktoken's n_vocab: max token id + 1, INCLUDING specials
     const std::string& encoding() const;
+
+    // this encoding's special tokens (string, id), sorted by id
+    const std::vector<std::pair<std::string, uint32_t>>& special_tokens() const;
+    // true iff id decodes to something (a vocab token or a special)
+    bool known_id(uint32_t id) const;
 
     Tokenizer(Tokenizer&&) noexcept;
     Tokenizer& operator=(Tokenizer&&) noexcept;

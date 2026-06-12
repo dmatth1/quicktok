@@ -121,7 +121,8 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
         if (!ef)
             throw std::runtime_error("quicktok: unknown encoding: " + encoding +
                 " (built-in: cl100k_base, o200k_base, o200k_harmony, llama3, llama4, qwen3;"
-                " or import one with tools/import_tokenizer.py)");
+                " or import one: quicktok.import_tokenizer() from Python,"
+                " tools/import_tokenizer.py from a checkout)");
         char line[256];
         std::string scanner;
         bool nfc = false;
@@ -159,6 +160,25 @@ Tokenizer Tokenizer::load_dir(const std::string& dir, const std::string& encodin
 }
 
 size_t Tokenizer::vocab_size() const { return impl->V.size(); }
+
+size_t Tokenizer::n_vocab() const {
+    // tiktoken semantics: max token id + 1, specials included (cl100k -> 100277)
+    size_t hi = impl->id_offset + impl->V.size();          // base ids end here
+    for (const auto& [s, sid] : impl->specials)
+        if ((size_t)sid + 1 > hi) hi = (size_t)sid + 1;
+    return hi;
+}
+
+const std::vector<std::pair<std::string, uint32_t>>& Tokenizer::special_tokens() const {
+    return impl->specials;
+}
+
+bool Tokenizer::known_id(uint32_t id) const {
+    if (id >= impl->id_offset && id - impl->id_offset < impl->V.n) return true;
+    for (const auto& [s, sid] : impl->specials)
+        if (sid == id) return true;
+    return false;
+}
 const std::string& Tokenizer::encoding() const { return impl->name; }
 
 static inline bool is_utf8_cont(uint8_t b) { return (b & 0xC0) == 0x80; }
