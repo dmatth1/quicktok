@@ -6,7 +6,7 @@ encoding runs 2–3.5× faster than the fastest exact tokenizer we know of
 ([bpe-openai](https://github.com/github/rust-gems)) and 4–11× faster than tiktoken
 itself. See [benchmarks](#benchmarks).
 
-- **Exact** — ids match tiktoken byte-for-byte; every benchmark is exactness-checked before timing.
+- **Exact** — ids match each encoding's reference (tiktoken / Hugging Face / Meta) byte-for-byte; every benchmark is exactness-checked before timing.
 - **Drop-in** — Python wheels with a tiktoken-style API, a stable C ABI, CMake support.
 - **Self-contained** — C++20, no external dependencies; cl100k_base, o200k_base, o200k_harmony, Llama-3, and Qwen2.5/3 ship in the repo.
 - **Thread-safe** — load once, call `encode()` from as many threads as you like.
@@ -41,7 +41,7 @@ target_link_libraries(app PRIVATE quicktok::quicktok)
 git clone https://github.com/dmatth1/quicktok
 cd quicktok
 make            # builds build/libquicktok.{a, dylib/so}
-make test       # verifies exact ids vs tiktoken (all encodings) + C ABI
+make test       # verifies exact ids vs the references (all encodings) + C ABI
 ```
 
 ```cpp
@@ -205,7 +205,7 @@ Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-stru
 ```cpp
 namespace quicktok {
 class Tokenizer {
-    // encoding: "cl100k_base" (default), "o200k_base", "o200k_harmony", "llama3", "qwen3", "llama4"
+    // encoding: a built-in name (table below) or any imported one (tools/import_tokenizer.py)
     static Tokenizer load_dir(const std::string& dir, const std::string& encoding = "cl100k_base");
 
     std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
@@ -224,52 +224,44 @@ class Tokenizer {
 ```
 
 - `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
-- Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged.
+- Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged. (NFC encodings decode valid-but-non-NFC input to its normalized form — see [Encodings](#encodings).)
 - Python's `encode_batch` returns a flat `uint32` token array plus `int64` offsets (`tokens[offsets[i]:offsets[i+1]]` is document *i*, no per-document Python lists); `count_batch(enc, texts)` gives per-document counts.
 - `load*` throws `std::runtime_error` on missing or corrupt data files. Nothing throws on the encode hot path (one exception: inputs over 4 GiB per call are rejected).
 - A loaded `Tokenizer` is safe to share across threads — concurrent `encode()`/`decode()` is supported and tested.
 
 ## Encodings
 
-Five encodings ship in the repo, each byte-exact vs its reference:
+Five encodings ship in the repo; Llama-4's code path ships too, but its vocab is
+gated. Each is byte-exact vs its reference:
 
-| name | model family | reference | notes |
-|---|---|---|---|
-| `cl100k_base` | GPT-3.5 / GPT-4 | tiktoken | the default |
-| `o200k_base` | GPT-4o | tiktoken | ~85% of cl100k speed (2× vocab) |
-| `o200k_harmony` | GPT-OSS (20b/120b) | tiktoken | same pattern + ranks as o200k_base, extra chat specials |
-| `llama3` | Llama 3 | Meta tiktoken-rank | full cl100k speed; see exactness note |
-| `qwen3` | Qwen2.5 / Qwen3 | HF tokenizers | cl100k speed; single-digit numbers; NFC-normalizing |
-| `llama4` | Llama 4 | Meta tiktoken-rank | **not bundled** (gated — bring your own vocab, see below) |
+| name | model family | reference |
+|---|---|---|
+| `cl100k_base` | GPT-3.5 / GPT-4 | tiktoken (the default) |
+| `o200k_base` | GPT-4o | tiktoken |
+| `o200k_harmony` | GPT-OSS | tiktoken — o200k_base plus the harmony chat specials |
+| `llama3` | Llama 3 | Meta's tiktoken-rank BPE |
+| `qwen3` | Qwen2.5 / Qwen3 | Hugging Face tokenizers, including its NFC normalization |
+| `llama4` | Llama 4 | Meta — **not bundled** (gated; bring your own vocab) |
 
-Load one by encoding name. The Python wheel bundles all the data files, so a name
-is all you need; in C++ you also point at the directory holding them (`data/` in
-this repo, or wherever `make install` put them):
+Load by name. The Python wheel bundles the data files; in C++, point at the
+directory holding them (`data/` in this repo, or wherever `make install` put them):
 
 ```python
-enc = quicktok.get_encoding("qwen3")                        # Python: data ships in the wheel
+enc = quicktok.get_encoding("qwen3")
 ```
 ```cpp
-auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, explicit data dir
+auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");
 ```
 
-- **Qwen2.5 / Qwen3** share one byte-level BPE; quicktok reproduces the Hugging
-  Face tokenizer byte-for-byte, including the **NFC normalization** its pipeline
-  runs before tokenizing. Clean input (the overwhelming majority) pays one cheap
-  scan; only spans containing non-NFC codepoints are normalized. Like the HF
-  reference, decode returns the normalized text for such input. Apache-2.0;
-  regenerate with `tools/export_qwen.py --download`; the NFC tables are pinned
-  and re-derivable (`tools/export_nfc.py verify`).
-- **o200k_harmony** is o200k_base plus the harmony chat specials (`<|start|>`,
-  `<|channel|>`, `<|return|>`, …) — ordinary text encodes identically to o200k_base.
-- **Llama-3** reproduces Meta's original **tiktoken-rank** BPE byte-for-byte
-  ([Meta Llama 3 Community License](https://llama.meta.com/llama3/license/), see
-  [NOTICE](https://github.com/dmatth1/quicktok/blob/main/NOTICE); regenerate with `tools/export_llama3.py <tokenizer.json> data`).
-  Hugging Face / llama.cpp infer the same vocab from a **merge list** and agree on
-  ~99.9998% of tokens — the rare differences are non-Latin+symbol sequences (e.g.
-  Cyrillic next to `€`) where rank order and merge order pick different splits.
-- **Llama-4** uses the same pretokenizer as o200k_base, so the code path ships —
-  but Meta's vocab is gated and **not bundled**. Export your own, then load it:
+- **qwen3** reproduces the HF pipeline including NFC normalization: clean input
+  pays one cheap scan, only spans with non-NFC codepoints are normalized, and —
+  like HF — decode returns the normalized text for such input.
+- **llama3** matches Meta's original tiktoken-rank tokenizer. Hugging Face and
+  llama.cpp infer the same vocab from a merge list and agree on ~99.9998% of
+  tokens; the rare differences are non-Latin+symbol sequences where rank order
+  and merge order pick different splits.
+- **llama4** shares o200k_base's pretokenizer; export Meta's gated vocab
+  yourself, then load it:
 
   ```sh
   python tools/export_llama4.py <tokenizer.model> data
@@ -278,40 +270,36 @@ auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");  // C++: same thing, 
   enc = quicktok.get_encoding("llama4", "data")
   ```
 
+Vocabs regenerate from their references with `tools/export_*.py`; the Unicode and
+NFC tables are pinned, version-stamped, and exhaustively re-derivable
+(`tools/export_unicode.py verify`, `tools/export_nfc.py verify`). Third-party
+vocab licenses: [NOTICE](https://github.com/dmatth1/quicktok/blob/main/NOTICE).
+
 ### Importing other tokenizers
 
 Any byte-level-BPE tokenizer whose pretokenizer matches one of quicktok's
-hand-compiled grammars can be imported — **with exactness verified as part of
-the import**:
+hand-compiled grammars (cl100k / o200k / llama3 / qwen / tekken) can be imported,
+with exactness verified as part of the import:
 
 ```sh
 python tools/import_tokenizer.py path/to/tokenizer.json myenc --corpus big.txt
 ```
-
 ```python
 enc = quicktok.get_encoding("myenc", "data")
 ```
 
-The tool parses the tokenizer config (HF `tokenizer.json` or Mistral-style
-`tekken.json`), checks the normalizer (none/NFC), classifies the pretokenizer
-regex against the supported grammars (cl100k / o200k / llama3 / qwen / tekken),
-writes the data files, then encodes a stress suite (plus any `--corpus` files)
-with both the reference tokenizer and quicktok and compares token-for-token.
-**A mismatch fails the import** — there is no slow fallback and no approximate
-mode; an unrecognized pattern is refused with the pattern printed, because each
-grammar is compiled by hand (that's where the speed comes from).
+The tool checks the normalizer (none/NFC), classifies the pretokenizer regex,
+writes the data files, then encodes a stress suite plus any `--corpus` files with
+both the reference tokenizer and quicktok and compares token-for-token. A
+mismatch fails the import; an unrecognized pattern is refused with the pattern
+printed. There is no fallback regex engine and no approximate mode — each grammar
+is compiled by hand, which is where the speed comes from.
 
-Both outcomes, demonstrated on real configs:
-
-- **Mistral Tekken v3** imports and verifies — its pattern is the o200k grammar
-  minus contractions with single-digit numbers, and its 1,000 reserved
-  special-token slots are handled (`id_offset`), so the ids match
-  `mistral-common` exactly (verified against it). Runs at full o200k-class
-  speed (~103 MB/s on The Pile, M1).
-- **DeepSeek V3/R1** is refused: it pretokenizes with a pipeline of three
-  sequential Split regexes over `\p{P}`/`\p{S}` classes — a different grammar
-  shape, printed in full by the refusal. Supporting it would be a deliberate
-  new scanner, not an import.
+- **Mistral Tekken v3** imports and verifies: the o200k grammar minus
+  contractions, single-digit numbers, ids offset by its 1,000 reserved special
+  slots — exact vs `mistral-common`, at full o200k-class speed.
+- **DeepSeek V3/R1** is refused: a pipeline of three sequential Split regexes, a
+  different grammar shape. Supporting it would be a new scanner, not an import.
 
 ## Notes
 
@@ -324,6 +312,7 @@ Both outcomes, demonstrated on real configs:
   python tools/export_fixtures.py        # cl100k/o200k/o200k_harmony from tiktoken
   python tools/export_qwen.py --download  # data/qwen3.vocab (Apache-2.0)
   python tools/export_unicode.py         # data/uniclass.bin + version stamp
+  python tools/export_nfc.py             # data/nfc.bin (NFC tables) + version stamp
   python tools/gen_vectors.py            # test vectors (tiktoken encodings)
   ```
 
