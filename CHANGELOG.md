@@ -5,6 +5,22 @@ versioning is [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+- **Single-pass product machines for both pretok families** — `encode_core` now
+  owns the full ASCII grammar inline (cl100k/Llama-3/Qwen family: standalone
+  contractions, general 1-byte-prefix words, digit rules per family, punct runs,
+  per-family whitespace cascade; o200k family: prefix-consumed-first word
+  alternatives, case-aware UPPER*/LOWER+ letters, attached contractions, the
+  `/`-tail on punct, o200k whitespace order). Non-ASCII falls back to the exact
+  scalar scanner for one piece, so output is byte-exact by construction
+  (vector + special suites for all encodings; 18/18 corpus exactness gates vs
+  tiktoken). M1, interleaved old-vs-new on the 25 MB corpora: cl100k Pile
+  +1.6% / code +4.9%; o200k code **+10.1%**; multilingual flat. Tekken keeps
+  the plain fused loop (no product machine for its grammar yet).
+  Note: a whole-piece hash fast path was evaluated and REJECTED at this corpus
+  scale (L2 displacement outweighs the saved walk; wins seen on small inputs
+  did not transfer).
+
 ### Added
 - Open-model benchmark comparisons, bench-grade (M1, single thread, best-of-5,
   three real corpora, exactness-gated): vs llama.cpp on Llama-3 (~11–13×), vs

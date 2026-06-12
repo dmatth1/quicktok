@@ -177,9 +177,186 @@ static inline void merge_piece(const Vocab& V, const uint8_t* piece, size_t len,
     V.encode(piece, (uint32_t)len, out);
 }
 
+// ASCII class predicates for the product machines below. a_pun deliberately
+// includes control bytes and DEL: the regex class is [^\s\p{L}\p{N}].
+static inline bool a_let(uint8_t b){ return (uint8_t)((b|0x20)-'a') <= 25u; }
+static inline bool a_dig(uint8_t b){ return (uint8_t)(b-'0') <= 9u; }
+static inline bool a_ws (uint8_t b){ return (uint8_t)(b-9) <= 4u || b==' '; }
+static inline bool a_pun(uint8_t b){ return b < 0x80 && !a_ws(b) && !a_let(b) && !a_dig(b); }
+
+// Single-pass product machines: one loop owns BOTH the pretok boundary rules and
+// token emission for the full ASCII grammar of each family — no per-piece scanner
+// dispatch on the hot path. ANY Unicode
+// contact at a run boundary falls back to the exact scalar scanner for one piece,
+// so output is byte-exact by construction (verified: full vector + special suites,
+// 3x25MB corpus diffs vs tiktoken on both families). Tekken keeps the plain
+// fused loop: its grammar is importer-verified but has no product machine yet.
 static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
                         bool o200k, bool l3, bool qw, bool tk,
-                        const uint8_t* t, uint32_t L, std::vector<uint32_t>& out);
+                        const uint8_t* t, uint32_t L, std::vector<uint32_t>& out) {
+    uint32_t p = 0;
+    auto emit = [&](uint32_t off, uint32_t plen) {
+        V.encode_with_first(t + off, plen, V.next_match(t + off, plen), out);
+    };
+    auto emit_word = emit;   // whole-piece hash measured NEGATIVE at 25MB-corpus scale
+                             // (L2 displacement; see evolve TOKENIZER_LOG 2026-06-12) — walk only
+    if (o200k) {
+        const UClassO& U = Uo;
+        if (tk) {   // Tekken: plain fused loop (no product machine yet)
+            while (p < L) {
+                uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
+                if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {
+                    uint32_t ue = detail::ascii_upper_run(t, ls, L);
+                    uint32_t we = detail::ascii_lower_run(t, ue, L);
+                    if (we == L || t[we] < 0x80) { emit_word(p, we - p); p = we; continue; }
+                }
+                uint32_t l = detail::pretok_next_tekken(U, t, p, L);
+                if (!l) l = 1;
+                merge_piece(V, t + p, l, out); p += l;
+            }
+            return;
+        }
+        // o200k_base / o200k_harmony / Llama-4 product machine. Grammar mirrored
+        // from pretok_next_o200k: prefix-consumed-FIRST on both word alts;
+        // UPPER*LOWER+ then UPPER+LOWER* (for ASCII a pure [A-Z]* run has no
+        // LOWER-eligible char, so the CJK backtrack scan never applies natively);
+        // ATTACHED contractions; '/' in the punct tail; lastnl-first ws order.
+        while (p < L) {
+            const uint8_t b0 = t[p];
+            bool fb = (b0 >= 0x80);
+            uint32_t adv = 0;
+            if (!fb) do {
+                bool hitmb = false;
+                auto matchUL = [&](uint32_t st) -> uint32_t {     // UPPER* LOWER+
+                    uint32_t i = detail::ascii_upper_run(t, st, L);
+                    if (i < L && t[i] >= 0x80) { hitmb = true; return 0; }
+                    uint32_t j = detail::ascii_lower_run(t, i, L);
+                    if (j < L && t[j] >= 0x80) { hitmb = true; return 0; }
+                    return (j > i) ? j : 0;
+                };
+                auto matchUpL = [&](uint32_t st) -> uint32_t {    // UPPER+ LOWER*
+                    uint32_t i = detail::ascii_upper_run(t, st, L);
+                    if (i == st) return 0;
+                    if (i < L && t[i] >= 0x80) { hitmb = true; return 0; }
+                    uint32_t j = detail::ascii_lower_run(t, i, L);
+                    if (j < L && t[j] >= 0x80) { hitmb = true; return 0; }
+                    return j;
+                };
+                bool prefelig = !a_let(b0) && !a_dig(b0) && b0 != '\r' && b0 != '\n';
+                if (prefelig && p + 1 < L && t[p+1] >= 0x80) { fb = true; break; }
+                uint32_t e = 0;
+                if (prefelig && p + 1 < L) e = matchUL(p + 1);
+                if (hitmb) { fb = true; break; }
+                if (!e) e = matchUL(p);
+                if (hitmb) { fb = true; break; }
+                if (!e && prefelig && p + 1 < L) e = matchUpL(p + 1);
+                if (hitmb) { fb = true; break; }
+                if (!e) e = matchUpL(p);
+                if (hitmb) { fb = true; break; }
+                if (e) { e = detail::o_contraction(t, e, L); emit_word(p, e - p); adv = e - p; break; }
+                if (a_dig(b0)) {                                   // \p{N}{1,3}
+                    uint32_t q = p + 1, c = 1;
+                    while (q < L && c < 3 && a_dig(t[q])) { q++; c++; }
+                    if (c < 3 && q < L && t[q] >= 0x80) { fb = true; break; }
+                    emit(p, q - p); adv = q - p; break;
+                }
+                {                                                  //  ?punct+[\r\n/]*
+                    uint32_t q = p + (b0 == ' ' ? 1 : 0), s4 = q;
+                    while (q < L && a_pun(t[q])) q++;
+                    if (q > s4) {
+                        if (q < L && t[q] >= 0x80) { fb = true; break; }
+                        while (q < L && (t[q]=='\r' || t[q]=='\n' || t[q]=='/')) q++;
+                        emit(p, q - p); adv = q - p; break;
+                    }
+                }
+                if (a_ws(b0)) {                                    // \s*[\r\n]+|\s+(?!\S)|\s+
+                    uint32_t e2 = p, lastnl = UINT32_MAX;
+                    while (e2 < L && a_ws(t[e2])) { if (t[e2]=='\r' || t[e2]=='\n') lastnl = e2; e2++; }
+                    if (e2 < L && t[e2] >= 0x80) { fb = true; break; }
+                    uint32_t plen;
+                    if (lastnl != UINT32_MAX) plen = lastnl + 1 - p;
+                    else if (e2 == L) plen = e2 - p;
+                    else if (e2 - p > 1) plen = e2 - p - 1;
+                    else plen = 1;
+                    emit(p, plen); adv = plen; break;
+                }
+                fb = true;                                          // unreachable for ASCII
+            } while (0);
+            if (fb) { uint32_t l = detail::pretok_next_o200k(U, t, p, L); if (!l) l = 1;
+                      merge_piece(V, t + p, l, out); p += l; }
+            else p += adv;
+        }
+        return;
+    }
+    // cl100k / Llama-3 / Qwen product machine. Shared letter/contraction/punct
+    // grammar; per-flag: Qwen single-digit numbers, o200k-style ws for l3/qw.
+    const UClass& U = Uc;
+    while (p < L) {
+        const uint8_t b0 = t[p];
+        bool fb = (b0 >= 0x80);
+        uint32_t adv = 0;
+        if (!fb) do {
+            if (b0 == '\'' && p + 1 < L) {                        // '(?i:[sdmt]|ll|ve|re)
+                uint8_t c1 = t[p+1] | 0x20;
+                if (c1=='s'||c1=='d'||c1=='m'||c1=='t') { emit(p, 2); adv = 2; break; }
+                if (p + 2 < L) { uint8_t c2 = t[p+2] | 0x20;
+                    if ((c1=='l'&&c2=='l')||(c1=='v'&&c2=='e')||(c1=='r'&&c2=='e')) { emit(p, 3); adv = 3; break; } }
+            }
+            {                                                      // [^\r\n\p{L}\p{N}]?+\p{L}++
+                uint32_t ls;
+                if (a_let(b0)) ls = p;
+                else if (b0 < 0x80 && !a_dig(b0) && b0 != '\r' && b0 != '\n'
+                         && p + 1 < L && a_let(t[p+1])) ls = p + 1;
+                else goto not_word;
+                {
+                    uint32_t we = detail::ascii_letter_run(t, ls, L);
+                    if (we < L && t[we] >= 0x80) { fb = true; break; }
+                    emit_word(p, we - p); adv = we - p; break;
+                }
+            }
+            not_word:
+            if (a_dig(b0)) {                                       // \p{N}{1,3} (Qwen: \p{N})
+                uint32_t q = p + 1, c = 1;
+                if (!qw) while (q < L && c < 3 && a_dig(t[q])) { q++; c++; }
+                if (!qw && c < 3 && q < L && t[q] >= 0x80) { fb = true; break; }
+                emit(p, q - p); adv = q - p; break;
+            }
+            {                                                      //  ?punct+[\r\n]*
+                uint32_t q = p + (b0 == ' ' ? 1 : 0), s4 = q;
+                while (q < L && a_pun(t[q])) q++;
+                if (q > s4) {
+                    if (q < L && t[q] >= 0x80) { fb = true; break; }
+                    while (q < L && (t[q]=='\r' || t[q]=='\n')) q++;
+                    emit(p, q - p); adv = q - p; break;
+                }
+            }
+            if (a_ws(b0)) {                                        // ws cascade, per-family order
+                uint32_t e2 = p, lastnl = UINT32_MAX;
+                while (e2 < L && a_ws(t[e2])) { if (t[e2]=='\r' || t[e2]=='\n') lastnl = e2; e2++; }
+                if (e2 < L && t[e2] >= 0x80) { fb = true; break; }
+                uint32_t plen;
+                if (l3 || qw) {                                    // o200k-style order
+                    if (lastnl != UINT32_MAX) plen = lastnl + 1 - p;
+                    else if (e2 == L) plen = e2 - p;
+                    else if (e2 - p > 1) plen = e2 - p - 1;
+                    else plen = 1;
+                } else {                                           // cl100k order
+                    if (e2 == L) plen = e2 - p;
+                    else if (lastnl != UINT32_MAX) plen = lastnl + 1 - p;
+                    else if (e2 - p > 1) plen = e2 - p - 1;
+                    else plen = 1;
+                }
+                emit(p, plen); adv = plen; break;
+            }
+            fb = true;                                              // unreachable for ASCII
+        } while (0);
+        if (fb) { uint32_t l = qw ? detail::pretok_next_qwen(U, t, p, L)
+                            : l3 ? detail::pretok_next_llama3(U, t, p, L)
+                                 : detail::pretok_next(U, t, p, L);
+                  merge_piece(V, t + p, l, out); p += l; }
+        else p += adv;
+    }
+}
 
 void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out) const {
     if (len > 0xFFFFFFFFull)
@@ -207,63 +384,6 @@ void Tokenizer::encode(const uint8_t* t, size_t len, std::vector<uint32_t>& out)
         for (size_t i = start; i < out.size(); i++) out[i] += impl->id_offset;
 }
 
-static void encode_core(const Vocab& V, const UClass& Uc, const UClassO& Uo,
-                        bool o200k, bool l3, bool qw, bool tk,
-                        const uint8_t* t, uint32_t L, std::vector<uint32_t>& out) {
-    uint32_t p = 0;
-    if (o200k) {
-        const UClassO& U = Uo;
-        while (p < L) {
-            // ASCII-word fast path, fused (o200k flavor of the cl100k loop below).
-            // For ASCII, UPPER==[A-Z] and LOWER==[a-z], so alts 1+2 reduce to: the
-            // piece ends after [A-Z]*[a-z]+ if any lowers follow the upper run, else
-            // after [A-Z]+ — i.e. upper run then lower run — plus the optional
-            // (?i:'s|'t|'re|'ve|'m|'ll|'d) suffix (o200k attaches contractions to the
-            // word, unlike cl100k where they're a separate alternative). Bail to the
-            // general scanner if the run ends at a non-ASCII byte: a Unicode letter
-            // or mark could extend the match.
-            uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
-            if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {
-                uint32_t ue = detail::ascii_upper_run(t, ls, L);
-                uint32_t we = detail::ascii_lower_run(t, ue, L);
-                if (we == L || t[we] < 0x80) {
-                    if (!tk && we < L && t[we] == '\'') we = detail::o_contraction(t, we, L);
-                    uint32_t wlen = we - p;
-                    uint32_t first = V.next_match(t + p, wlen);
-                    if (V.token_len(first) == wlen) out.push_back(first); // single token: fused
-                    else V.encode_with_first(t + p, wlen, first, out);    // reuse the walk
-                    p = we; continue;
-                }
-            }
-            uint32_t l = tk ? detail::pretok_next_tekken(U, t, p, L)
-                            : detail::pretok_next_o200k(U, t, p, L);
-            if (!l) l = 1;
-            merge_piece(V, t + p, l, out); p += l;
-        }
-        return;
-    }
-    // cl100k / Llama-3 / Qwen: fused pretok+merge loop. The ASCII-word fast path is
-    // identical for all three (same letter grammar); only the alt cascade in
-    // pretok_next differs (whitespace style, and Qwen's single-digit numbers).
-    const UClass& U = Uc;
-    while (p < L) {
-        uint8_t b0 = t[p]; uint32_t ls = (b0 == ' ') ? p + 1 : p;
-        if (ls < L && (uint8_t)((t[ls] | 0x20) - 'a') <= 25u) {       // ASCII word
-            uint32_t we = detail::ascii_letter_run(t, ls, L);
-            if (we == L || t[we] < 0x80) {                            // pure-ASCII word
-                uint32_t wlen = we - p;
-                uint32_t first = V.next_match(t + p, wlen);
-                if (V.token_len(first) == wlen) out.push_back(first); // single token: fused
-                else V.encode_with_first(t + p, wlen, first, out);    // reuse the walk
-                p = we; continue;
-            }
-        }
-        uint32_t l = qw ? detail::pretok_next_qwen(U, t, p, L)
-                   : l3 ? detail::pretok_next_llama3(U, t, p, L)
-                        : detail::pretok_next(U, t, p, L);
-        merge_piece(V, t + p, l, out); p += l;
-    }
-}
 
 std::vector<uint32_t> Tokenizer::encode(std::string_view text) const {
     std::vector<uint32_t> out;

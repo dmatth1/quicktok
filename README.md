@@ -2,8 +2,8 @@
 
 A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++.
 Token ids are byte-identical to [tiktoken](https://github.com/openai/tiktoken);
-encoding runs 2–3.5× faster than the fastest exact tokenizer we know of
-([bpe-openai](https://github.com/github/rust-gems)) and 4–11× faster than tiktoken
+encoding runs 2–3.4× faster than the fastest exact tokenizer we know of
+([bpe-openai](https://github.com/github/rust-gems)) and 3.5–11× faster than tiktoken
 itself. See [benchmarks](#benchmarks).
 
 - **Exact** — ids match each encoding's reference (tiktoken / Hugging Face / Meta) byte-for-byte; every benchmark is exactness-checked before timing.
@@ -123,26 +123,26 @@ sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **116.1** | **144.2** | **75.2** |
-| bpe-openai | 36.5 | 41.6 | 29.2 |
-| tiktoken-rs | 15.3 | 14.3 | 13.5 |
-| tiktoken (Python) | 14.7 | 13.2 | 12.3 |
-| TokenDagger | 11.5 | 12.0 | 11.2 |
+| **quicktok** | **118.3** | **142.6** | **72.3** |
+| bpe-openai | 37.5 | 41.9 | 28.6 |
+| tiktoken-rs | 15.7 | 14.1 | 13.4 |
+| tiktoken (Python) | 14.2 | 13.1 | 12.0 |
+| TokenDagger | 11.2 | 11.7 | 10.7 |
 
 **o200k_base** (GPT-4o)
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **100.6** | **117.1** | **59.2** |
-| bpe-openai | 36.1 | 40.1 | 29.9 |
-| tiktoken-rs | 23.1 | 20.9 | 17.9 |
-| tiktoken (Python) | 21.6 | 19.3 | 16.3 |
-| TokenDagger | 11.0 | 11.7 | 10.2 |
+| **quicktok** | **99.3** | **122.3** | **54.7** |
+| bpe-openai | 35.4 | 39.2 | 28.2 |
+| tiktoken-rs | 23.2 | 21.6 | 17.2 |
+| tiktoken (Python) | 20.1 | 18.5 | 15.4 |
+| TokenDagger | 10.5 | 11.3 | 9.7 |
 
 **Reproduce these tables:** `make bench-compare` — see [bench/README.md](https://github.com/dmatth1/quicktok/blob/main/bench/README.md).
 
 <details>
-<summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads)</summary>
+<summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads; measured at v0.3.2)</summary>
 
 <br>Native `encode_batch()` (`make bench`), cl100k:
 
@@ -162,7 +162,7 @@ From Python (`make bench-py`), cl100k, 10 threads:
 </details>
 
 <details>
-<summary><b>x86 cross-check</b> (cl100k + o200k, The Pile / Code / Common Crawl)</summary>
+<summary><b>x86 cross-check</b> (cl100k + o200k, The Pile / Code / Common Crawl; measured at v0.3.2 — re-validation of the current engine pending)</summary>
 
 <br>Same encoders, corpora, and method on an x86 server (Intel Xeon @ 2.8 GHz,
 single thread, MB/s). quicktok is shown both as the native C++ kernel and as the
@@ -250,6 +250,7 @@ Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-stru
 - **2-byte trie** — the longest-match walk reads 2 input bytes per single 8-byte slot load, with a zero-lookup direct table for CJK characters.
 - **Dense validity memos** — merge-validity checks hit exactly-keyed caches (2 MB for 17-bit token ids, a second wide one for 200k-vocab ids; a bijective mixer means no aliasing, ever).
 - **Specialized pretokenizers** — the fixed cl100k/o200k-family regexes are compiled by hand into SIMD scanners; no general regex engine anywhere.
+- **Single-pass product machines** — for ASCII text (most of code and English), one loop owns both the pretokenizer's boundary rules and token emission: contractions, prefix-words, digit triples, punct runs, and the whitespace cascade are handled inline with no per-piece scanner dispatch; only Unicode contact falls back to the general scanner, one piece at a time.
 
 ## Encodings
 
