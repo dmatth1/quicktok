@@ -47,12 +47,13 @@ public:
     // token buffer + an int64 offsets array (len n+1) instead of n Python lists.
     // doc i's tokens = tokens[offsets[i]:offsets[i+1]]. Avoids per-document Python
     // object construction — the marshalling cost that would cap a list-returning path.
-    py::tuple encode_batch(const std::vector<std::string>& texts, unsigned threads) const {
+    py::tuple encode_batch(const std::vector<std::string>& texts, unsigned threads,
+                           bool with_special) const {
         std::vector<std::vector<uint32_t>> res;
         {
             std::vector<std::string_view> views(texts.begin(), texts.end());
             py::gil_scoped_release rel;
-            res = tok.encode_batch(views, threads);
+            res = tok.encode_batch(views, threads, with_special);
         }
         size_t n = res.size(), total = 0;
         for (const auto& v : res) total += v.size();
@@ -90,8 +91,10 @@ PYBIND11_MODULE(_quicktok, m) {
         .def("encode_with_special", &PyTokenizer::encode_with_special, py::arg("text"),
              "Encode, turning known special-token strings into their ids.")
         .def("encode_batch", &PyTokenizer::encode_batch, py::arg("texts"), py::arg("threads") = 0,
+             py::arg("with_special") = false,
              "Encode many texts in parallel -> (tokens uint32[], offsets int64[]); "
-             "doc i is tokens[offsets[i]:offsets[i+1]].")
+             "doc i is tokens[offsets[i]:offsets[i+1]]. with_special=True parses "
+             "special-token strings (chat-templated data).")
         .def("count", &PyTokenizer::count, py::arg("text"))
         .def("decode", &PyTokenizer::decode, py::arg("ids"),
              "Decode ids -> str (utf-8).")

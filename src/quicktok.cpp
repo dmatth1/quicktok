@@ -417,14 +417,17 @@ std::vector<uint32_t> Tokenizer::encode_with_special(std::string_view text) cons
 }
 
 std::vector<std::vector<uint32_t>> Tokenizer::encode_batch(const std::vector<std::string_view>& texts,
-                                                           unsigned threads) const {
+                                                           unsigned threads, bool with_special) const {
     std::vector<std::vector<uint32_t>> out(texts.size());
     if (texts.empty()) return out;
+    auto enc1 = [&](std::string_view s) {
+        return with_special ? encode_with_special(s) : encode(s);
+    };
     unsigned hw = std::thread::hardware_concurrency();
     unsigned n = threads ? threads : (hw ? hw : 4);
     if (n > texts.size()) n = (unsigned)texts.size();
     if (n <= 1) {
-        for (size_t i = 0; i < texts.size(); i++) out[i] = encode(texts[i]);
+        for (size_t i = 0; i < texts.size(); i++) out[i] = enc1(texts[i]);
         return out;
     }
     std::atomic<size_t> next{0};
@@ -433,7 +436,7 @@ std::vector<std::vector<uint32_t>> Tokenizer::encode_batch(const std::vector<std
     for (unsigned t = 0; t < n; t++)
         ths.emplace_back([&] {
             for (size_t i; (i = next.fetch_add(1, std::memory_order_relaxed)) < texts.size(); )
-                out[i] = encode(texts[i]);
+                out[i] = enc1(texts[i]);
         });
     for (auto& th : ths) th.join();
     return out;

@@ -54,6 +54,8 @@ offsets — no per-document Python lists; ~550 MB/s from Python on an M1:
 tokens, offsets = enc.encode_batch(docs)    # doc i = tokens[offsets[i]:offsets[i+1]]
 tokens.tofile("corpus.tokens.bin")          # flat binary, ready for training
 counts = quicktok.count_batch(enc, docs)    # per-doc token counts for budgeting
+
+enc.encode_batch(chats, with_special=True)  # chat-templated data: "<|im_start|>..." -> special ids
 ```
 
 - `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
@@ -92,7 +94,8 @@ class Tokenizer {
     std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
     std::vector<uint32_t> encode_with_special(std::string_view) const;  // allowed_special="all"
     void encode(const uint8_t* text, size_t len, std::vector<uint32_t>& out) const;
-    std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string_view>&, unsigned threads = 0) const;
+    std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string_view>&,
+                                                    unsigned threads = 0, bool with_special = false) const;
     size_t count(std::string_view text) const;
 
     std::string decode(const std::vector<uint32_t>& ids) const;         // handles special ids too

@@ -35,10 +35,12 @@ public:
     // number of tokens encode() would produce (same cost as encode)
     size_t count(std::string_view text) const;
 
-    // encode many texts in parallel (ordinary semantics). threads = 0 picks
-    // hardware concurrency. Safe because a loaded Tokenizer is shareable.
+    // encode many texts in parallel. threads = 0 picks hardware concurrency;
+    // with_special = true gives encode_with_special() semantics per text (e.g.
+    // chat-templated fine-tuning data). Safe because a loaded Tokenizer is shareable.
     std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string_view>& texts,
-                                                    unsigned threads = 0) const;
+                                                    unsigned threads = 0,
+                                                    bool with_special = false) const;
 
     // token ids -> bytes (appends to out). Special ids decode to their strings;
     // other ids >= vocab_size() are skipped.

@@ -151,6 +151,19 @@ int main(int argc, char** argv) {
             if (batch[i] != tok.encode(texts[i])) bad++;
         if (bad) { fails++; printf("  FAIL: encode_batch diverged on %d items\n", bad); }
         else printf("encode_batch: OK (257 texts, parallel == sequential)\n");
+
+        // with_special: chat-templated batch == per-doc encode_with_special
+        std::vector<std::string> chats;
+        for (int i = 0; i < 64; i++)
+            chats.push_back("<|endoftext|>system " + std::to_string(i) +
+                            "<|endofprompt|>user: hi <|endoftext|>");
+        std::vector<std::string_view> cviews(chats.begin(), chats.end());
+        auto sbatch = tok.encode_batch(cviews, 0, /*with_special=*/true);
+        bad = 0;
+        for (size_t i = 0; i < chats.size(); i++)
+            if (sbatch[i] != tok.encode_with_special(chats[i])) bad++;
+        if (bad) { fails++; printf("  FAIL: encode_batch(with_special) diverged on %d items\n", bad); }
+        else printf("encode_batch(with_special): OK (64 chat texts, parallel == sequential)\n");
     }
 
     // --- concurrency: parallel encode() on ONE Tokenizer must stay exact ---

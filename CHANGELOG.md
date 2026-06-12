@@ -30,6 +30,9 @@ versioning is [SemVer](https://semver.org).
   `bench/llamacpp_bench.cpp`.
 
 ### Added
+- `encode_batch(..., with_special=True)` (C++ and Python): parallel batch
+  encoding with special-token parsing — the chat-templated fine-tuning-data
+  path. Same flat-arrays output; `count_batch` gains the flag too.
 - **The importer ships in the wheel**: `quicktok.import_tokenizer(source, name)`
   (also `python -m quicktok.importer`) — source can be a local
   tokenizer.json/tekken.json, a URL, or a Hugging Face repo id (with

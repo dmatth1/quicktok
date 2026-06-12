@@ -59,11 +59,11 @@ def encoding_for_model(model: str) -> "Tokenizer":
                    f"or import the model's tokenizer with quicktok.import_tokenizer()")
 
 
-def count_batch(enc: "Tokenizer", texts, threads: int = 0):
+def count_batch(enc: "Tokenizer", texts, threads: int = 0, with_special: bool = False):
     """Token counts for many texts, in parallel. Returns a numpy int64 array.
     Faster than len(encode(t)) per text — no Python list of ids is ever built."""
     import numpy as _np
-    _toks, offsets = enc.encode_batch(list(texts), threads)
+    _toks, offsets = enc.encode_batch(list(texts), threads, with_special)
     return _np.diff(offsets)
 
 
