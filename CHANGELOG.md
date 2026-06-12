@@ -14,6 +14,17 @@ versioning is [SemVer](https://semver.org).
   `bench/llamacpp_bench.cpp`.
 
 ### Added
+- **The importer ships in the wheel**: `quicktok.import_tokenizer(source, name)`
+  (also `python -m quicktok.importer`) — source can be a local
+  tokenizer.json/tekken.json, a URL, or a Hugging Face repo id (with
+  `huggingface_hub`). Imported encodings are written to `$QUICKTOK_DATA` (default
+  `~/.cache/quicktok`) and `get_encoding(name)` finds them automatically, so the
+  flow from pip is: install → import once (verified) → use by name.
+- `encoding_for_model` resolves HF-style ids (`meta-llama/Llama-3.1-8B`) and
+  Llama-3 model names; unknown models point at `import_tokenizer`.
+- Linux aarch64 wheels (native arm runner in the wheels matrix).
+- README: a bulk-processing recipe (`encode_batch` → flat token file + offsets,
+  `count_batch` for budgeting) — the dataset-prep path.
 - **Tokenizer importer with built-in verification** (`tools/import_tokenizer.py`):
   imports any byte-level-BPE `tokenizer.json` / `tekken.json` whose pretokenizer
   matches a supported grammar (cl100k / o200k / llama3 / qwen / tekken) and whose

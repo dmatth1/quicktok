@@ -24,7 +24,12 @@ import quicktok
 enc = quicktok.get_encoding("cl100k_base")        # or "o200k_base", "o200k_harmony", "llama3", "qwen3"
 ids = enc.encode("hello world")                   # == tiktoken.encode_ordinary
 text = enc.decode(ids)
-quicktok.encoding_for_model("gpt-4o").count("...")  # tiktoken-style model lookup
+
+quicktok.encoding_for_model("meta-llama/Llama-3.1-8B").count("...")   # model-name lookup
+
+# other byte-level-BPE tokenizers: import once (exactness-verified), then use by name
+quicktok.import_tokenizer("path/to/tekken.json", "tekken")
+quicktok.get_encoding("tekken")
 ```
 
 **C++** — via CMake (`find_package` or `FetchContent`), or `make install` and
@@ -58,6 +63,19 @@ auto batch = tok.encode_batch(texts);                       // parallel
 ```
 
 The data files install to `share/quicktok`.
+
+## Processing large datasets
+
+`encode_batch` tokenizes documents in parallel and returns one flat `uint32`
+token array plus `int64` offsets — no per-document Python lists; ~550 MB/s from
+Python on an M1 (see [benchmarks](#benchmarks)):
+
+```python
+enc = quicktok.get_encoding("llama3")
+tokens, offsets = enc.encode_batch(docs)    # doc i = tokens[offsets[i]:offsets[i+1]]
+tokens.tofile("corpus.tokens.bin")          # flat binary, ready for training
+counts = quicktok.count_batch(enc, docs)    # per-doc token counts for budgeting
+```
 
 ## Benchmarks
 
