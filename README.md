@@ -198,6 +198,10 @@ and `bench/llamacpp_bench.cpp`.
 handicaps. TokenDagger's README claims 2–4× over tiktoken, but that's on
 Llama-4/Mistral vocabs on AMD EPYC; on cl100k/o200k here it lands around Python
 tiktoken's level, and on its own Llama-4 vocab about half of it (table above).
+We checked our setup wasn't the cause: PCRE2 JIT is verified active, and
+rebuilding TokenDagger with `-O3 -mcpu=native` (its own Makefile uses `-O2`)
+changes its numbers by under 1%. The gap is structural — a backtracking regex
+engine called per pretoken, and byte-string-keyed merge lookups.
 </details>
 
 ## How it's fast
