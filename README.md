@@ -19,9 +19,19 @@ itself. See [benchmarks](#benchmarks).
 pip install quicktok-v1
 ```
 
+**C++** — via CMake (`find_package` or `FetchContent`), or `make install` and
+pkg-config. There's also a stable **C ABI** (`quicktok.h`) for FFI from any language.
+
+```cmake
+find_package(quicktok REQUIRED)
+target_link_libraries(app PRIVATE quicktok::quicktok)
+```
+
+## Python
+
 ```python
 import quicktok
-enc = quicktok.get_encoding("cl100k_base")        # or "o200k_base", "o200k_harmony", "llama3", "qwen3"
+enc = quicktok.get_encoding("cl100k_base")
 ids = enc.encode("hello world")                   # == tiktoken.encode_ordinary
 text = enc.decode(ids)
 
@@ -32,15 +42,23 @@ quicktok.import_tokenizer("path/to/tekken.json", "tekken")
 quicktok.get_encoding("tekken")
 ```
 
-**C++** — via CMake (`find_package` or `FetchContent`), or `make install` and
-pkg-config. There's also a stable **C ABI** (`quicktok.h`) for FFI from any language.
+All encoding names — bundled, gated, imported — are in [Encodings](#encodings).
 
-```cmake
-find_package(quicktok REQUIRED)
-target_link_libraries(app PRIVATE quicktok::quicktok)
+For bulk work (dataset prep, corpus token counting), `encode_batch` tokenizes
+documents in parallel and returns one flat `uint32` token array plus `int64`
+offsets — no per-document Python lists; ~550 MB/s from Python on an M1:
+
+```python
+tokens, offsets = enc.encode_batch(docs)    # doc i = tokens[offsets[i]:offsets[i+1]]
+tokens.tofile("corpus.tokens.bin")          # flat binary, ready for training
+counts = quicktok.count_batch(enc, docs)    # per-doc token counts for budgeting
 ```
 
-## Build from source
+- `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
+- Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged. (NFC encodings decode valid-but-non-NFC input to its normalized form — see [Encodings](#encodings).)
+- Imported encodings are stored in `$QUICKTOK_DATA` (default `~/.cache/quicktok`); `get_encoding` finds them automatically.
+
+## C++
 
 ```sh
 git clone https://github.com/dmatth1/quicktok
@@ -62,20 +80,33 @@ auto with_sp = tok.encode_with_special("a<|endoftext|>b");  // specials -> ids
 auto batch = tok.encode_batch(texts);                       // parallel
 ```
 
-The data files install to `share/quicktok`.
+```cpp
+namespace quicktok {
+class Tokenizer {
+    // encoding: a built-in name (see Encodings) or any imported one
+    static Tokenizer load_dir(const std::string& dir, const std::string& encoding = "cl100k_base");
 
-## Processing large datasets
+    std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
+    std::vector<uint32_t> encode_with_special(std::string_view) const;  // allowed_special="all"
+    void encode(const uint8_t* text, size_t len, std::vector<uint32_t>& out) const;
+    std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string_view>&, unsigned threads = 0) const;
+    size_t count(std::string_view text) const;
 
-`encode_batch` tokenizes documents in parallel and returns one flat `uint32`
-token array plus `int64` offsets — no per-document Python lists; ~550 MB/s from
-Python on an M1 (see [benchmarks](#benchmarks)):
+    std::string decode(const std::vector<uint32_t>& ids) const;         // handles special ids too
+    void decode(const uint32_t* ids, size_t n, std::string& out) const;
 
-```python
-enc = quicktok.get_encoding("llama3")
-tokens, offsets = enc.encode_batch(docs)    # doc i = tokens[offsets[i]:offsets[i+1]]
-tokens.tofile("corpus.tokens.bin")          # flat binary, ready for training
-counts = quicktok.count_batch(enc, docs)    # per-doc token counts for budgeting
+    size_t vocab_size() const;
+    const std::string& encoding() const;
+};
+}
 ```
+
+- `load_dir` takes the directory holding the data files (`data/` in this repo;
+  `make install` puts them in `share/quicktok`). It throws `std::runtime_error`
+  on missing or corrupt files; nothing throws on the encode hot path (one
+  exception: inputs over 4 GiB per call are rejected).
+- A loaded `Tokenizer` is safe to share across threads — concurrent
+  `encode()`/`decode()` is supported and tested.
 
 ## Benchmarks
 
@@ -209,7 +240,6 @@ Reproduce: `python bench/hf_qwen_bench.py`, `python bench/llama4_bench.py`,
 and `bench/llamacpp_bench.cpp`.
 </details>
 
-
 ## How it's fast
 
 Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-structure engineering:
@@ -217,35 +247,6 @@ Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-stru
 - **2-byte trie** — the longest-match walk reads 2 input bytes per single 8-byte slot load, with a zero-lookup direct table for CJK characters.
 - **Dense validity memos** — merge-validity checks hit exactly-keyed caches (2 MB for 17-bit token ids, a second wide one for 200k-vocab ids; a bijective mixer means no aliasing, ever).
 - **Specialized pretokenizers** — the fixed cl100k/o200k-family regexes are compiled by hand into SIMD scanners; no general regex engine anywhere.
-
-## API
-
-```cpp
-namespace quicktok {
-class Tokenizer {
-    // encoding: a built-in name (table below) or any imported one (tools/import_tokenizer.py)
-    static Tokenizer load_dir(const std::string& dir, const std::string& encoding = "cl100k_base");
-
-    std::vector<uint32_t> encode(std::string_view text) const;          // encode_ordinary semantics
-    std::vector<uint32_t> encode_with_special(std::string_view) const;  // allowed_special="all"
-    void encode(const uint8_t* text, size_t len, std::vector<uint32_t>& out) const;
-    std::vector<std::vector<uint32_t>> encode_batch(const std::vector<std::string_view>&, unsigned threads = 0) const;
-    size_t count(std::string_view text) const;
-
-    std::string decode(const std::vector<uint32_t>& ids) const;         // handles special ids too
-    void decode(const uint32_t* ids, size_t n, std::string& out) const;
-
-    size_t vocab_size() const;
-    const std::string& encoding() const;
-};
-}
-```
-
-- `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
-- Any byte sequence is accepted; invalid UTF-8 round-trips through encode/decode unchanged. (NFC encodings decode valid-but-non-NFC input to its normalized form — see [Encodings](#encodings).)
-- Python's `encode_batch` returns a flat `uint32` token array plus `int64` offsets (`tokens[offsets[i]:offsets[i+1]]` is document *i*, no per-document Python lists); `count_batch(enc, texts)` gives per-document counts.
-- `load*` throws `std::runtime_error` on missing or corrupt data files. Nothing throws on the encode hot path (one exception: inputs over 4 GiB per call are rejected).
-- A loaded `Tokenizer` is safe to share across threads — concurrent `encode()`/`decode()` is supported and tested.
 
 ## Encodings
 
@@ -260,16 +261,6 @@ gated. Each is byte-exact vs its reference:
 | `llama3` | Llama 3 | Meta's tiktoken-rank BPE |
 | `qwen3` | Qwen2.5 / Qwen3 | Hugging Face tokenizers, including its NFC normalization |
 | `llama4` | Llama 4 | Meta — **not bundled** (gated; bring your own vocab) |
-
-Load by name. The Python wheel bundles the data files; in C++, point at the
-directory holding them (`data/` in this repo, or wherever `make install` put them):
-
-```python
-enc = quicktok.get_encoding("qwen3")
-```
-```cpp
-auto tok = quicktok::Tokenizer::load_dir("data", "qwen3");
-```
 
 - **qwen3** reproduces the HF pipeline including NFC normalization: clean input
   pays one cheap scan, only spans with non-NFC codepoints are normalized, and —
@@ -296,17 +287,14 @@ vocab licenses: [NOTICE](https://github.com/dmatth1/quicktok/blob/main/NOTICE).
 ### Importing other tokenizers
 
 Any byte-level-BPE tokenizer whose pretokenizer matches one of quicktok's
-hand-compiled grammars (cl100k / o200k / llama3 / qwen / tekken) can be imported,
-with exactness verified as part of the import:
+hand-compiled grammars (cl100k / o200k / llama3 / qwen / tekken) can be imported —
+`quicktok.import_tokenizer()` from Python (shown above), or:
 
 ```sh
-python tools/import_tokenizer.py path/to/tokenizer.json myenc --corpus big.txt
-```
-```python
-enc = quicktok.get_encoding("myenc", "data")
+python -m quicktok.importer path/to/tokenizer.json myenc --corpus big.txt
 ```
 
-The tool checks the normalizer (none/NFC), classifies the pretokenizer regex,
+The import checks the normalizer (none/NFC), classifies the pretokenizer regex,
 writes the data files, then encodes a stress suite plus any `--corpus` files with
 both the reference tokenizer and quicktok and compares token-for-token. A
 mismatch fails the import; an unrecognized pattern is refused with the pattern
@@ -322,7 +310,6 @@ is compiled by hand, which is where the speed comes from.
 ## Notes
 
 - Builds tune to the host CPU by default (`-march=native`); set `CXXFLAGS_ARCH` for portable binaries.
-- The bundled Unicode table is pinned and version-stamped; `python tools/export_unicode.py verify` re-derives all 1.1 M codepoints against the live reference and diffs them — see [`data/uniclass.bin.meta`](https://github.com/dmatth1/quicktok/blob/main/data/uniclass.bin.meta).
 - To regenerate the data files from the references:
 
   ```sh
