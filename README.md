@@ -168,7 +168,7 @@ From Python (`make bench-py`), cl100k, 10 threads:
 </details>
 
 <details>
-<summary><b>x86 cross-check</b> (cl100k + o200k, The Pile / Code / Common Crawl; measured at v0.3.2 — re-validation of the current engine pending)</summary>
+<summary><b>x86 cross-check</b> (cl100k + o200k, The Pile / Code / Common Crawl; current engine)</summary>
 
 <br>Same encoders, corpora, and method on an x86 server (Intel Xeon @ 2.8 GHz,
 single thread, MB/s). quicktok is shown both as the native C++ kernel and as the
@@ -178,27 +178,28 @@ Python wheel:
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** (native) | **75.0** | **86.6** | **47.9** |
-| quicktok (Python) | 42.5 | 47.4 | 29.6 |
-| bpe-openai | 25.9 | 30.8 | 22.9 |
-| tiktoken-rs | 11.1 | 10.2 | 11.1 |
-| tiktoken (Python) | 10.2 | 9.1 | 9.5 |
-| TokenDagger | 7.1 | 7.6 | 7.1 |
+| **quicktok** (native) | **72.3** | **88.7** | **46.3** |
+| quicktok (Python) | 46.5 | 53.1 | 30.6 |
+| bpe-openai | 27.0 | 31.5 | 23.6 |
+| tiktoken-rs | 11.7 | 10.3 | 11.2 |
+| tiktoken (Python) | 10.4 | 9.2 | 9.6 |
+| TokenDagger | 7.3 | 7.7 | 7.2 |
 
 **o200k_base** (GPT-4o)
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** (native) | **60.9** | **69.5** | **37.3** |
-| quicktok (Python) | 36.6 | 41.1 | 26.7 |
-| bpe-openai | 24.4 | 28.9 | 23.9 |
-| tiktoken-rs | 17.0 | 15.5 | 15.1 |
-| tiktoken (Python) | 14.2 | 13.3 | 13.2 |
-| TokenDagger | 6.6 | 7.3 | 6.2 |
+| **quicktok** (native) | **59.1** | **70.7** | **36.6** |
+| quicktok (Python) | 39.2 | 45.3 | 27.4 |
+| bpe-openai | 25.3 | 29.3 | 23.8 |
+| tiktoken-rs | 17.3 | 15.7 | 15.4 |
+| tiktoken (Python) | 14.4 | 13.6 | 13.9 |
+| TokenDagger | 6.7 | 7.4 | 6.4 |
 
-Same ordering as the M1 tables, the Python wheel included. (One footnote:
-TokenDagger diverges from the other four by a single token on Pile/cl100k — a
-known TokenDagger edge case, not an encoder bug.)
+Same ordering as the M1 tables, the Python wheel included (o200k runs at a steady
+~0.80× of cl100k native). (One footnote: TokenDagger diverges from the other four
+by a single token on Pile/cl100k — a known TokenDagger edge case, not an encoder
+bug.)
 </details>
 
 <details>
