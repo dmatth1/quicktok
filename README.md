@@ -34,7 +34,7 @@ target_link_libraries(app PRIVATE quicktok::quicktok)
 ```python
 import quicktok
 enc = quicktok.get_encoding("cl100k_base")
-ids = enc.encode("hello world")                   # == tiktoken.encode_ordinary
+ids = enc.encode("hello world")                   # tiktoken semantics (raises on a stray special)
 text = enc.decode(ids)
 
 quicktok.encoding_for_model("meta-llama/Llama-3.1-8B").count("...")   # model-name lookup
@@ -58,9 +58,9 @@ counts = quicktok.count_batch(enc, docs)    # per-doc token counts for budgeting
 enc.encode_batch(chats, with_special=True)  # chat-templated data: "<|im_start|>..." -> special ids
 ```
 
-- `encode()` is tiktoken's `encode_ordinary` (special tokens treated as plain text); `encode_with_special()` is tiktoken's `encode(text, allowed_special="all")`. Both byte-exact vs the reference, both tested.
+- `encode(text, allowed_special=set(), disallowed_special="all")` matches tiktoken exactly: a stray special-token string raises `ValueError` by default; `allowed_special="all"` (or a set) turns specials into their ids, `disallowed_special=()` disables the check. `encode_ordinary(text)` always treats specials as plain text; `encode_with_special(text)` (alias `encode_with_special_tokens`) is `allowed_special="all"`. All byte-exact vs the reference, all tested.
 - Any byte sequence is accepted. `decode()` returns `str` with `errors="replace"` and raises `KeyError` on unknown ids — both as in tiktoken; `decode_bytes()` returns the exact bytes, so encode → decode_bytes round-trips any input losslessly. (NFC encodings decode valid-but-non-NFC input to its normalized form — see [Encodings](#encodings).)
-- tiktoken-parity surface: `n_vocab` (max id + 1, specials included), `eot_token`, `special_tokens_set`, `decode_single_token_bytes`, `encode_ordinary`.
+- tiktoken-parity surface: `encode`/`encode_ordinary`/`encode_with_special`(`_tokens`), `encode_single_token`, `decode`/`decode_bytes`/`decode_batch`/`decode_single_token_bytes`, `is_special_token`, `n_vocab`, `max_token_value`, `eot_token`, `special_tokens_set`, `token_byte_values` — so a tiktoken `Encoding` can be swapped for `quicktok.get_encoding(...)`.
 - Imported encodings are stored in `$QUICKTOK_DATA` (default `~/.cache/quicktok`); `get_encoding` finds them automatically.
 - `import_tokenizer` verifies against the model's own tokenizer, so the reference must be installed: `pip install tokenizers` (HF models) or `mistral-common` (Tekken) — plus `huggingface_hub` to fetch from a repo id (and its auth for gated repos).
 

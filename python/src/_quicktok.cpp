@@ -6,6 +6,8 @@
 #include <cstring>
 #include "quicktok.hpp"
 #include <string>
+#include <set>
+#include <algorithm>
 
 namespace py = pybind11;
 
@@ -28,6 +30,87 @@ public:
     std::vector<uint32_t> encode_with_special(const std::string& s) const {
         py::gil_scoped_release rel;
         return tok.encode_with_special(std::string_view(s));
+    }
+    // tiktoken's Encoding.encode(text, *, allowed_special=set(), disallowed_special="all"):
+    // raise if a disallowed special string occurs; otherwise encode, turning the
+    // allowed specials into their ids and everything else into ordinary tokens.
+    std::vector<uint32_t> encode_tt(const std::string& text, const py::object& allowed,
+                                    const py::object& disallowed) const {
+        const auto& sp = tok.special_tokens();
+        auto is_all = [](const py::object& o){ return py::isinstance<py::str>(o) && o.cast<std::string>() == "all"; };
+        auto to_set = [](const py::object& o){
+            std::set<std::string> r;
+            for (py::handle h : o) r.insert(h.cast<std::string>());
+            return r;
+        };
+        std::set<std::string> allow;
+        if (is_all(allowed)) { for (const auto& pr : sp) allow.insert(pr.first); }
+        else if (!allowed.is_none()) allow = to_set(allowed);
+        std::set<std::string> disallow;
+        if (is_all(disallowed)) { for (const auto& pr : sp) if (!allow.count(pr.first)) disallow.insert(pr.first); }
+        else if (!disallowed.is_none()) disallow = to_set(disallowed);
+        // disallowed check (tiktoken raises ValueError naming the offending token)
+        for (const auto& s : disallow) {
+            if (s.empty()) continue;
+            if (text.find(s) != std::string::npos) {
+                std::string q = py::repr(py::str(s)).cast<std::string>();
+                throw py::value_error(
+                    "Encountered text corresponding to disallowed special token " + q + ".\n"
+                    "If you want this text to be encoded as a special token, pass it to "
+                    "`allowed_special`, e.g. `allowed_special={" + q + ", ...}`.\n"
+                    "If you want this text to be encoded as normal text, disable the check "
+                    "for this token by passing `disallowed_special=()`, or use `encode_ordinary`.");
+            }
+        }
+        py::gil_scoped_release rel;
+        std::vector<uint32_t> out; out.reserve(text.size() / 3 + 8);
+        size_t p = 0;
+        while (p < text.size()) {
+            size_t best = std::string::npos, bi = 0;
+            for (size_t i = 0; i < sp.size(); i++)
+                if (allow.count(sp[i].first)) {
+                    size_t q = text.find(sp[i].first, p);
+                    if (q < best) { best = q; bi = i; }
+                }
+            if (best == std::string::npos) {
+                tok.encode((const uint8_t*)text.data() + p, text.size() - p, out); break;
+            }
+            if (best > p) tok.encode((const uint8_t*)text.data() + p, best - p, out);
+            out.push_back(sp[bi].second);
+            p = best + sp[bi].first.size();
+        }
+        return out;
+    }
+    // exact bytes/str of a SINGLE token -> its id (tiktoken's encode_single_token).
+    uint32_t encode_single_token(const py::object& piece) const {
+        std::string b;
+        if (py::isinstance<py::bytes>(piece)) {
+            char* d; Py_ssize_t n; PYBIND11_BYTES_AS_STRING_AND_SIZE(piece.ptr(), &d, &n);
+            b.assign(d, (size_t)n);
+        } else {
+            b = piece.cast<std::string>();   // str -> utf-8
+        }
+        int64_t id = tok.token_id(b);
+        if (id < 0) throw py::key_error("bytes are not a single token in this encoding");
+        return (uint32_t)id;
+    }
+    bool is_special_token(uint32_t id) const {
+        for (const auto& [s, sid] : tok.special_tokens()) if (sid == id) return true;
+        return false;
+    }
+    uint32_t max_token_value() const { return (uint32_t)(tok.n_vocab() - 1); }
+    py::list token_byte_values() const {   // base-vocab token bytes, lexicographically
+        std::vector<std::string> vals(tok.vocab_size());   // tiktoken returns sorted_token_bytes
+        for (uint32_t i = 0; i < (uint32_t)tok.vocab_size(); i++) tok.decode(&i, 1, vals[i]);
+        std::sort(vals.begin(), vals.end());
+        py::list r;
+        for (auto& v : vals) r.append(py::bytes(v));
+        return r;
+    }
+    py::list decode_batch(const std::vector<std::vector<uint32_t>>& batch, const std::string& errors) const {
+        py::list r;
+        for (const auto& ids : batch) r.append(decode(ids, errors));
+        return r;
     }
     size_t count(const std::string& s) const {
         py::gil_scoped_release rel;
@@ -112,13 +195,29 @@ PYBIND11_MODULE(_quicktok, m) {
     py::class_<PyTokenizer>(m, "Tokenizer")
         .def(py::init<const std::string&, const std::string&>(),
              py::arg("encoding"), py::arg("data_dir") = "")
-        .def("encode", &PyTokenizer::encode_str, py::arg("text"),
-             "Encode text -> token ids (ordinary semantics; specials are plain text).")
-        .def("encode", &PyTokenizer::encode, py::arg("text"))
+        .def("encode", &PyTokenizer::encode_tt, py::arg("text"),
+             py::kw_only(), py::arg("allowed_special") = py::set(),
+             py::arg("disallowed_special") = py::str("all"),
+             "Encode text -> token ids (tiktoken semantics). By default a special-token "
+             "string in the input raises ValueError; pass allowed_special=\"all\" (or a set) "
+             "to encode specials as their ids, or use encode_ordinary() to treat them as text. "
+             "disallowed_special=() disables the check.")
         .def("encode_ordinary", &PyTokenizer::encode_str, py::arg("text"),
-             "Alias of encode() — matches tiktoken's name.")
+             "Encode text -> token ids, treating special-token strings as plain text "
+             "(never raises). tiktoken's encode_ordinary.")
         .def("encode_with_special", &PyTokenizer::encode_with_special, py::arg("text"),
-             "Encode, turning known special-token strings into their ids.")
+             "Encode, turning every known special-token string into its id "
+             "(== encode(text, allowed_special=\"all\")).")
+        .def("encode_with_special_tokens", &PyTokenizer::encode_with_special, py::arg("text"),
+             "Alias of encode_with_special() — the name tiktoken-rs / TokenDagger use.")
+        .def("encode_single_token", &PyTokenizer::encode_single_token, py::arg("text_or_bytes"),
+             "Id of a piece that is exactly one token (str or bytes); KeyError otherwise.")
+        .def("is_special_token", &PyTokenizer::is_special_token, py::arg("id"),
+             "True iff the id is one of this encoding's special tokens.")
+        .def("decode_batch", &PyTokenizer::decode_batch, py::arg("batch"), py::arg("errors") = "replace",
+             "Decode many id lists -> list[str].")
+        .def("token_byte_values", &PyTokenizer::token_byte_values,
+             "List of the base vocabulary's token byte-strings, indexed by rank.")
         .def("encode_batch", &PyTokenizer::encode_batch, py::arg("texts"), py::arg("threads") = 0,
              py::arg("with_special") = false,
              "Encode many texts in parallel -> (tokens uint32[], offsets int64[]); "
@@ -139,5 +238,7 @@ PYBIND11_MODULE(_quicktok, m) {
         .def_property_readonly("name", &PyTokenizer::name)
         .def_property_readonly("n_vocab", &PyTokenizer::n_vocab,
              "Max token id + 1, specials included (tiktoken semantics; cl100k -> 100277).")
+        .def_property_readonly("max_token_value", &PyTokenizer::max_token_value,
+             "Highest token id, specials included (== n_vocab - 1); tiktoken's name.")
         .def("__repr__", [](const PyTokenizer& t){ return "<quicktok.Tokenizer '" + t.name() + "'>"; });
 }

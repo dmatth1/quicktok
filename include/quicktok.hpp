@@ -23,14 +23,21 @@ public:
     static Tokenizer load(const std::string& vocab_path, const std::string& uniclass_path);
 
     // text -> token ids. Special-token strings in the input are encoded as plain
-    // text (tiktoken's encode_ordinary semantics).
+    // text (tiktoken's encode_ordinary semantics). Never raises on specials —
+    // the raise-on-disallowed behavior of tiktoken's Python encode() lives in the
+    // Python binding (this C++ surface mirrors tiktoken-rs, which also doesn't raise).
     void encode(const uint8_t* text, size_t len, std::vector<uint32_t>& out) const;
     std::vector<uint32_t> encode(std::string_view text) const;
+    // explicit name for the ordinary path (tiktoken / tiktoken-rs / TokenDagger
+    // all spell it `encode_ordinary`); identical to encode(std::string_view).
+    std::vector<uint32_t> encode_ordinary(std::string_view text) const { return encode(text); }
 
     // like encode(), but occurrences of this encoding's special tokens
     // (e.g. "<|endoftext|>") become their special ids (tiktoken's
     // encode(text, allowed_special="all") semantics).
     std::vector<uint32_t> encode_with_special(std::string_view text) const;
+    // alias under the name tiktoken-rs / TokenDagger use.
+    std::vector<uint32_t> encode_with_special_tokens(std::string_view text) const { return encode_with_special(text); }
 
     // number of tokens encode() would produce (same cost as encode)
     size_t count(std::string_view text) const;
@@ -55,6 +62,9 @@ public:
     const std::vector<std::pair<std::string, uint32_t>>& special_tokens() const;
     // true iff id decodes to something (a vocab token or a special)
     bool known_id(uint32_t id) const;
+    // exact bytes -> model id, or -1 if those bytes are not a single token (base
+    // vocab or a special). Backs the Python encode_single_token().
+    int64_t token_id(std::string_view token_bytes) const;
 
     Tokenizer(Tokenizer&&) noexcept;
     Tokenizer& operator=(Tokenizer&&) noexcept;

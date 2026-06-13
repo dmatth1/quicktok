@@ -5,7 +5,27 @@ versioning is [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+- **`encode()` now matches tiktoken's full signature and semantics** (behavior
+  change): `encode(text, *, allowed_special=set(), disallowed_special="all")`.
+  A special-token string in the input now raises `ValueError` by default (as
+  tiktoken does), instead of being silently encoded as ordinary text — this
+  closes a prompt-injection footgun for code that swapped quicktok in expecting
+  tiktoken's guard. `allowed_special="all"` (or a set) encodes specials as ids;
+  `disallowed_special=()` disables the check. The old "specials as plain text,
+  never raises" behavior is exactly `encode_ordinary()`. Verified token-for-token
+  vs tiktoken across the default-raise, allowed-set, disallowed-set, and ordinary
+  paths for cl100k and o200k. (C++ `encode()` keeps ordinary semantics, matching
+  tiktoken-rs, which also doesn't raise.)
+
 ### Added
+- **More tiktoken-parity methods** (Python): `encode_single_token`,
+  `is_special_token`, `max_token_value`, `token_byte_values` (lexicographic, as
+  tiktoken's `sorted_token_bytes`), `decode_batch`, and an
+  `encode_with_special_tokens` alias (the name tiktoken-rs / TokenDagger use).
+  C++ gains `encode_ordinary`/`encode_with_special_tokens` aliases and
+  `token_id(bytes)`. A tiktoken `Encoding` now swaps for `get_encoding(...)`
+  across the common surface.
 - **tiktoken-parity surface in Python**: `n_vocab` now means max token id + 1
   *including specials* (cl100k -> 100277, matching tiktoken — it previously
   returned the 100256 base count, a silent embedding-sizing footgun);

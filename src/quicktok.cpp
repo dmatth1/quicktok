@@ -179,6 +179,16 @@ bool Tokenizer::known_id(uint32_t id) const {
         if (sid == id) return true;
     return false;
 }
+
+int64_t Tokenizer::token_id(std::string_view b) const {
+    // exact base-vocab token? (find_id keys on the raw bytes; apply the id offset)
+    uint32_t r = impl->V.find_id((const uint8_t*)b.data(), (uint32_t)b.size());
+    if (r != RANK_MAX) return (int64_t)r + impl->id_offset;
+    // otherwise a special-token string?
+    for (const auto& [s, sid] : impl->specials)
+        if (s.size() == b.size() && s == b) return (int64_t)sid;
+    return -1;
+}
 const std::string& Tokenizer::encoding() const { return impl->name; }
 
 static inline bool is_utf8_cont(uint8_t b) { return (b & 0xC0) == 0x80; }

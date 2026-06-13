@@ -119,7 +119,7 @@ def import_tokenizer(source, name, data_dir=None, corpus=()):
     total = bad = 0
     for s in texts:
         ref = list(ref_encode(s))
-        got = qt.encode(s)
+        got = qt.encode_ordinary(s)
         total += len(ref)
         if got != ref:
             bad += 1

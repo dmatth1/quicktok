@@ -37,11 +37,11 @@ def main():
         qt = quicktok.get_encoding(enc)
         tk = tiktoken.get_encoding(enc)
         # exactness gate
-        assert qt.encode(text) == tk.encode_ordinary(text), f"{enc}: id mismatch!"
-        ntok = len(qt.encode(text))
+        assert qt.encode_ordinary(text) == tk.encode_ordinary(text), f"{enc}: id mismatch!"
+        ntok = len(qt.encode_ordinary(text))
         print(f"[{enc}]  {ntok} tokens, exact vs tiktoken ✓")
 
-        q1 = best_of(5, lambda: qt.encode(text))
+        q1 = best_of(5, lambda: qt.encode_ordinary(text))
         t1 = best_of(5, lambda: tk.encode_ordinary(text))
         print(f"  single-thread   quicktok {mb/q1:7.1f} MB/s   tiktoken {mb/t1:6.1f} MB/s   {t1/q1:.1f}x")
 

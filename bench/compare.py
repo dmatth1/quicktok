@@ -153,9 +153,9 @@ def main():
             # 3. quicktok Python wheel
             if qtpy:
                 qe = qtpy.get_encoding(ENC_NAME[enc])
-                got = qe.encode(text)
+                got = qe.encode_ordinary(text)
                 assert got == ref, f"quicktok(Python) MISMATCH on {corpus}/{enc}"
-                results[(enc, corpus, "quicktok (Python)")] = mb / best_of(lambda: qe.encode(text))
+                results[(enc, corpus, "quicktok (Python)")] = mb / best_of(lambda: qe.encode_ordinary(text))
 
             # 4. bpe-openai + tiktoken-rs (exact-checked inside the crate)
             if cargo:
