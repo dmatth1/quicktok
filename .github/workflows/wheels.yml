@@ -19,15 +19,12 @@ jobs:
         env:
           # portable ABI (no -march=native); skip slow/legacy targets
           CIBW_SKIP: "pp* *-musllinux_i686 *_i686 *-win32"
-          # self-contained smoke test — tiktoken parity is covered in the main CI;
-          # the manylinux test container has no Rust to build tiktoken from source.
-          CIBW_TEST_COMMAND: >
-            python -c "import quicktok;
-            enc=quicktok.get_encoding('o200k_base');
-            s='wheel smoke: café 日本語 🚀 123';
-            assert enc.decode(enc.encode(s))==s and enc.count(s)>0;
-            assert quicktok.get_encoding('cl100k_base').n_vocab==100277;
-            print('wheel OK')"
+          # test the actual built wheel with the hermetic part of the suite. No
+          # tiktoken (the manylinux test container has no Rust to build it) — the
+          # tiktoken-parity tests importorskip and are covered in the main CI; the
+          # rest (round-trip, batch, module, importer contract) run per platform.
+          CIBW_TEST_REQUIRES: pytest numpy
+          CIBW_TEST_COMMAND: pytest {project}/tests -q
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}

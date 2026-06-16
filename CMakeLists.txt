@@ -65,6 +65,16 @@ if(QUICKTOK_BUILD_TESTS)
   add_test(NAME quicktok_test
            COMMAND test_quicktok ${CMAKE_CURRENT_SOURCE_DIR}/data
            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+  # C ABI smoke test — compiled as C, exercises the extern "C" surface. Via CMake
+  # (not just the Makefile) so it runs on every OS in CI, incl. Windows/MSVC.
+  enable_language(C)
+  add_executable(test_cabi test/test_cabi.c)
+  target_link_libraries(test_cabi PRIVATE quicktok)
+  set_target_properties(test_cabi PROPERTIES LINKER_LANGUAGE CXX)  # pull the C++ runtime
+  add_test(NAME quicktok_cabi_test
+           COMMAND test_cabi
+           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 if(QUICKTOK_BUILD_EXAMPLE)

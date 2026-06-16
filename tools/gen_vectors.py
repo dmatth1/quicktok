@@ -14,6 +14,26 @@ CASES = [
     # pretok backtrack (Lo is in both classes; Lu is UPPER-only). Regression for the
     # "亚洲AV" boundary bug. No spaces: the adjacency is the whole point.
     "噜噜亚洲AV中文ENGLISH日本語XY한국어KRΩβγXYZ",
+    # --- pretok branch coverage: whitespace alternatives ---
+    "trailing spaces to eof   ",            # \s+$  (run to EOF)
+    "line one  \n  line two",              # \s*[\r\n] then leading ws
+    "a    b      c   d",                    # \s+(?!\S): interior runs all-but-last
+    "tabs\there\tand\tthere",            # \t runs
+    "crlf\r\nlines\r\nend",             # \r\n
+    "mixed \t \n \t whitespace run",     # mixed ws
+    "word\n", "   ", "\t", "\r\n\r\n",  # single trailing nl / all-ws / lone tab / blank lines
+    # --- contractions incl. uppercase and leading-apostrophe ---
+    "IT'S DON'T THEY'LL WE'RE I'M HE'D YOU'VE",
+    "'tis 'twas o'clock can't",
+    # --- number runs (\p{N}{1,3} boundaries) ---
+    "1 22 333 4444 55555 1234567890",
+    "v1.2.3 port:8080 area51 3.14159",
+    # --- punctuation / symbol runs with newline tails, bracket/symbol prefixes ---
+    "!!!\n\n??? ...\n", "--- === +++ *** ///",
+    "(parens) [brackets] {braces} <angle>",
+    "@user #tag $price %pct &amp", "·middot «guillemets» —dash",
+    # --- o200k specifics: /-tail on punct, caps-then-lower letter runs ---
+    "a/b/c path/to/file.txt //comment", "HTTPSConnection XMLHttpRequest iOS macOS",
 ]
 SPECIAL_CASES = [
     "<|endoftext|>",
