@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -186,15 +187,15 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 200; i++)
             text += "The quick brown fox can't jump 1234 times over donde está the lazy 犬!\n";
         auto expect = tok.encode(text);
-        int bad = 0;
+        std::atomic<int> bad{0};
         std::vector<std::thread> ths;
         for (int t = 0; t < 8; t++)
             ths.emplace_back([&]{
                 for (int r = 0; r < 50; r++)
-                    if (tok.encode(text) != expect) __atomic_fetch_add(&bad, 1, __ATOMIC_RELAXED);
+                    if (tok.encode(text) != expect) bad.fetch_add(1, std::memory_order_relaxed);
             });
         for (auto& th : ths) th.join();
-        if (bad) { fails++; printf("  FAIL: concurrent encode diverged (%d)\n", bad); }
+        if (bad) { fails++; printf("  FAIL: concurrent encode diverged (%d)\n", bad.load()); }
         else printf("concurrency: OK (8 threads x 50 encodes, one shared Tokenizer, all exact)\n");
     }
 
