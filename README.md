@@ -252,6 +252,31 @@ Reproduce: `python bench/hf_qwen_bench.py`, `python bench/llama4_bench.py`,
 and `bench/llamacpp_bench.cpp`.
 </details>
 
+<details>
+<summary><b>vs tokie</b> (chonkie-inc/tokie, cl100k + o200k, x86 server, single thread)</summary>
+
+<br>tokie is a fast Rust BPE that targets **Hugging Face** output, not tiktoken — on
+these 25 MB corpora it diverges from tiktoken on 0.02–0.14% of tokens (worst on
+multilingual text), so it isn't a byte-exact tiktoken drop-in. Its `encode()` also
+spreads one call across cores; both encoders are pinned to a single core here for an
+equal-thread comparison (quicktok parallelizes via `encode_batch`), best-of-5, MB/s:
+
+| cl100k_base | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok (native)** | **66.1** | **84.6** | **42.9** |
+| tokie (native) | 37.5 | 50.4 | 19.4 |
+
+| o200k_base | The Pile | Code | Common Crawl |
+|---|---:|---:|---:|
+| **quicktok (native)** | **56.5** | **74.6** | **34.1** |
+| tokie (native) | 34.3 | 44.6 | 21.0 |
+
+quicktok is ~1.6–2.2× tokie at equal threads and byte-exact vs tiktoken throughout.
+Measured with the tokie Rust crate (`Tokenizer::from_json` on Xenova's gpt-4 /
+gpt-4o `tokenizer.json`); numbers are core-pinned, so a touch below the unpinned x86
+table above.
+</details>
+
 ## How it's fast
 
 Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-structure engineering:
