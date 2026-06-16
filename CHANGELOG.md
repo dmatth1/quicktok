@@ -19,6 +19,14 @@ versioning is [SemVer](https://semver.org).
   tiktoken-rs, which also doesn't raise.)
 
 ### Added
+- **`encode_to_numpy()`** (Python): like `encode()` but returns a `uint32` numpy
+  array instead of a `list[int]`. On large inputs the list-building (millions of
+  Python int objects) dominates the wheel's time — returning one contiguous
+  buffer skips it, lifting single-call throughput ~50% (x86: cl100k 42→63,
+  o200k 38→57 MB/s on a 25 MB doc, ~native). Matches tiktoken's
+  `encode_to_numpy`, same `allowed_special`/`disallowed_special` args; pass
+  `disallowed_special=()` for raw-text throughput. (`encode_batch` already
+  returned flat arrays; this brings the single-input path to parity.)
 - **More tiktoken-parity methods** (Python): `encode_single_token`,
   `is_special_token`, `max_token_value`, `token_byte_values` (lexicographic, as
   tiktoken's `sorted_token_bytes`), `decode_batch`, and an
