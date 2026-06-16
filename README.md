@@ -127,21 +127,25 @@ sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **118.3** | **142.6** | **72.3** |
-| bpe-openai | 37.5 | 41.9 | 28.6 |
-| tiktoken-rs | 15.7 | 14.1 | 13.4 |
-| tiktoken (Python) | 14.2 | 13.1 | 12.0 |
-| TokenDagger | 11.2 | 11.7 | 10.7 |
+| **quicktok (native)** | **121.7** | **139.2** | **71.3** |
+| **quicktok (Python)** | **77.9** | **83.6** | **49.7** |
+| bpe-openai | 36.6 | 38.7 | 28.9 |
+| rs-bpe | 30.9 | 34.7 | 23.5 |
+| tiktoken-rs | 15.4 | 13.8 | 13.3 |
+| tiktoken (Python) | 13.6 | 12.8 | 12.3 |
+| TokenDagger | 11.1 | 11.9 | 10.7 |
 
 **o200k_base** (GPT-4o)
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok** | **99.3** | **122.3** | **54.7** |
-| bpe-openai | 35.4 | 39.2 | 28.2 |
-| tiktoken-rs | 23.2 | 21.6 | 17.2 |
-| tiktoken (Python) | 20.1 | 18.5 | 15.4 |
-| TokenDagger | 10.5 | 11.3 | 9.7 |
+| **quicktok (native)** | **102.2** | **129.5** | **52.9** |
+| **quicktok (Python)** | **65.7** | **79.9** | **43.3** |
+| bpe-openai | 35.6 | 41.4 | 28.4 |
+| rs-bpe | 30.4 | 33.9 | 23.2 |
+| tiktoken-rs | 23.4 | 22.3 | 16.6 |
+| tiktoken (Python) | 20.4 | 18.6 | 14.9 |
+| TokenDagger | 10.4 | 11.3 | 9.3 |
 
 **Reproduce these tables:** `make bench-compare` — see [bench/README.md](https://github.com/dmatth1/quicktok/blob/main/bench/README.md).
 

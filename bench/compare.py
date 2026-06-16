@@ -18,6 +18,8 @@ Rows and what they need:
   bpe-openai,
   tiktoken-rs         a Rust toolchain; built on first run via bench/comparators/
                       (skipped if cargo is missing)
+  rs-bpe              pip install rs-bpe        (skipped if missing) — Python binding
+                      over the same `bpe` crate as bpe-openai
   TokenDagger         set TOKENDAGGER_DIR to a clone with src/tiktoken built —
                       see bench/tokendagger_bench.cpp (skipped otherwise)
 
@@ -103,6 +105,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpora", nargs="+", default=["pile", "code", "commoncrawl"])
     ap.add_argument("--encodings", nargs="+", default=["cl100k", "o200k"], choices=["cl100k", "o200k"])
+    ap.add_argument("--cooldown", type=float, default=0.0,
+                    help="seconds to idle before each encoder measurement; lets the CPU cool so a "
+                         "long sweep doesn't accumulate thermal throttling (0 = back-to-back, default)")
     args = ap.parse_args()
 
     try:
@@ -114,6 +119,11 @@ def main():
     except ImportError:
         qtpy = None
         print("note: quicktok wheel not installed — skipping the Python-binding row")
+    try:
+        from rs_bpe.bpe import openai as rsbpe
+    except ImportError:
+        rsbpe = None
+        print("note: rs-bpe not installed — skipping the rs-bpe row (pip install rs-bpe)")
 
     ensure_corpora(args.corpora)
     native = ensure_native()
@@ -126,6 +136,10 @@ def main():
         print("note: TOKENDAGGER_DIR not set — skipping the TokenDagger row")
 
     results = {}  # (enc, corpus, row) -> MB/s
+
+    def cool():
+        if args.cooldown:
+            time.sleep(args.cooldown)
 
     for enc in args.encodings:
         for corpus in args.corpora:
@@ -142,10 +156,12 @@ def main():
             ref = te.encode_ordinary(text)
             ids_path = os.path.join(CORPUS_DIR, f"{corpus}.{enc}.ids")
             write_ids(ids_path, ref)
-            results[(enc, corpus, "tiktoken (Python)")] = mb / best_of(lambda: te.encode_ordinary(text))
             print(f"  reference: {len(ref)} tokens (tiktoken)")
+            cool()
+            results[(enc, corpus, "tiktoken (Python)")] = mb / best_of(lambda: te.encode_ordinary(text))
 
             # 2. quicktok native (exact-checked inside bench_file; nonzero exit on mismatch)
+            cool()
             out = sh([native, path, ENC_NAME[enc], os.path.join(ROOT, "data"), ids_path]).stdout
             print(out.strip())
             results[(enc, corpus, "quicktok (native)")] = mbps(out)
@@ -155,10 +171,12 @@ def main():
                 qe = qtpy.get_encoding(ENC_NAME[enc])
                 got = qe.encode_ordinary(text)
                 assert got == ref, f"quicktok(Python) MISMATCH on {corpus}/{enc}"
+                cool()
                 results[(enc, corpus, "quicktok (Python)")] = mb / best_of(lambda: qe.encode_ordinary(text))
 
             # 4. bpe-openai + tiktoken-rs (exact-checked inside the crate)
             if cargo:
+                cool()
                 out = sh([cargo, "run", "--release", "--quiet",
                           "--manifest-path", os.path.join(BENCH, "comparators", "Cargo.toml"),
                           "--", path, enc, ids_path]).stdout
@@ -168,9 +186,20 @@ def main():
                         if line.startswith(row):
                             results[(enc, corpus, row)] = mbps(line)
 
-            # 5. TokenDagger (exact-checked inside the bench)
+            # 5. rs-bpe (Python binding over the `bpe` crate; exact-checked here,
+            #    same as the quicktok-Python row — the gate catches any encode()
+            #    semantic difference vs tiktoken's encode_ordinary)
+            if rsbpe is not None:
+                rb = {"cl100k": rsbpe.cl100k_base, "o200k": rsbpe.o200k_base}[enc]()
+                got = list(rb.encode(text))
+                assert got == ref, f"rs-bpe MISMATCH on {corpus}/{enc}"
+                cool()
+                results[(enc, corpus, "rs-bpe")] = mb / best_of(lambda: rb.encode(text))
+
+            # 6. TokenDagger (exact-checked inside the bench)
             if td_exe:
                 base = dump_td_vocab(enc, tiktoken)
+                cool()
                 out = subprocess.run([td_exe, path, ids_path, base + ".pat", base + ".vocab",
                                       base + ".special"], capture_output=True, text=True).stdout
                 print(out.strip())
@@ -178,7 +207,7 @@ def main():
 
     # markdown tables, same layout as the README
     rows = ["quicktok (native)", "quicktok (Python)", "bpe-openai", "tiktoken-rs",
-            "tiktoken (Python)", "TokenDagger"]
+            "rs-bpe", "tiktoken (Python)", "TokenDagger"]
     title = {"cl100k": "cl100k_base (GPT-3.5 / GPT-4)", "o200k": "o200k_base (GPT-4o)"}
     label = {"pile": "The Pile", "code": "Code", "commoncrawl": "Common Crawl"}
     print("\n" + "=" * 60)
