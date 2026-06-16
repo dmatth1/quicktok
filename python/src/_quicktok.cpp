@@ -81,6 +81,18 @@ public:
         }
         return out;
     }
+    // Same as encode(), but returns a numpy uint32 array instead of a list[int].
+    // For large inputs this is much faster: the result is one contiguous buffer
+    // (a single memcpy) rather than millions of per-token Python int objects — the
+    // list-building cost that otherwise dominates the wheel's time on big inputs.
+    // tiktoken's encode_to_numpy.
+    py::array_t<uint32_t> encode_to_numpy(const std::string& text, const py::object& allowed,
+                                          const py::object& disallowed) const {
+        std::vector<uint32_t> ids = encode_tt(text, allowed, disallowed);   // GIL released inside
+        py::array_t<uint32_t> arr((py::ssize_t)ids.size());
+        if (!ids.empty()) std::memcpy(arr.mutable_data(), ids.data(), ids.size() * sizeof(uint32_t));
+        return arr;
+    }
     // exact bytes/str of a SINGLE token -> its id (tiktoken's encode_single_token).
     uint32_t encode_single_token(const py::object& piece) const {
         std::string b;
@@ -205,6 +217,12 @@ PYBIND11_MODULE(_quicktok, m) {
         .def("encode_ordinary", &PyTokenizer::encode_str, py::arg("text"),
              "Encode text -> token ids, treating special-token strings as plain text "
              "(never raises). tiktoken's encode_ordinary.")
+        .def("encode_to_numpy", &PyTokenizer::encode_to_numpy, py::arg("text"),
+             py::kw_only(), py::arg("allowed_special") = py::set(),
+             py::arg("disallowed_special") = py::str("all"),
+             "Like encode(), but returns a numpy uint32 array (one contiguous buffer, "
+             "no per-token Python objects) — much faster on large inputs. tiktoken's "
+             "encode_to_numpy. For ordinary-text throughput pass disallowed_special=().")
         .def("encode_with_special", &PyTokenizer::encode_with_special, py::arg("text"),
              "Encode, turning every known special-token string into its id "
              "(== encode(text, allowed_special=\"all\")).")

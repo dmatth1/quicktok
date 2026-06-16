@@ -13,7 +13,8 @@ own benchmark uses.
 
 Rows and what they need:
   quicktok (native)   builds automatically (make bench-tools)
-  quicktok (Python)   pip install quicktok-v1   (skipped if missing)
+  quicktok (Python)   pip install quicktok-v1   (skipped if missing); two rows —
+                      encode_ordinary() -> list and encode_to_numpy() -> uint32 array
   tiktoken (Python)   pip install tiktoken      (required — it's the reference)
   bpe-openai,
   tiktoken-rs         a Rust toolchain; built on first run via bench/comparators/
@@ -166,13 +167,20 @@ def main():
             print(out.strip())
             results[(enc, corpus, "quicktok (native)")] = mbps(out)
 
-            # 3. quicktok Python wheel
+            # 3. quicktok Python wheel — two rows: encode_ordinary() -> list[int]
+            #    (tiktoken-style API), and encode_to_numpy() -> uint32 array (the fast
+            #    path for large inputs; skips building millions of Python ints).
             if qtpy:
                 qe = qtpy.get_encoding(ENC_NAME[enc])
                 got = qe.encode_ordinary(text)
                 assert got == ref, f"quicktok(Python) MISMATCH on {corpus}/{enc}"
+                arr = qe.encode_to_numpy(text, disallowed_special=())
+                assert arr.tolist() == ref, f"quicktok(Python,numpy) MISMATCH on {corpus}/{enc}"
                 cool()
                 results[(enc, corpus, "quicktok (Python)")] = mb / best_of(lambda: qe.encode_ordinary(text))
+                cool()
+                results[(enc, corpus, "quicktok (Python, numpy)")] = \
+                    mb / best_of(lambda: qe.encode_to_numpy(text, disallowed_special=()))
 
             # 4. bpe-openai + tiktoken-rs (exact-checked inside the crate)
             if cargo:
@@ -206,8 +214,8 @@ def main():
                 results[(enc, corpus, "TokenDagger")] = mbps(out)
 
     # markdown tables, same layout as the README
-    rows = ["quicktok (native)", "quicktok (Python)", "bpe-openai", "tiktoken-rs",
-            "rs-bpe", "tiktoken (Python)", "TokenDagger"]
+    rows = ["quicktok (native)", "quicktok (Python)", "quicktok (Python, numpy)",
+            "bpe-openai", "tiktoken-rs", "rs-bpe", "tiktoken (Python)", "TokenDagger"]
     title = {"cl100k": "cl100k_base (GPT-3.5 / GPT-4)", "o200k": "o200k_base (GPT-4o)"}
     label = {"pile": "The Pile", "code": "Code", "commoncrawl": "Common Crawl"}
     print("\n" + "=" * 60)

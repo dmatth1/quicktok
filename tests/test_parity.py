@@ -1,6 +1,7 @@
 """Byte-exact parity of the Python API vs tiktoken, across the full surface.
 The 0.4.0 release is defined by this surface (encode() raise semantics +
 ~10 parity methods), so it gets the most coverage."""
+import numpy as np
 import pytest
 import quicktok
 from conftest import TIKTOKEN_ENCODINGS, SAMPLES
@@ -93,3 +94,33 @@ def test_decode_unknown_id_raises(pair):
     _, q, _ = pair
     with pytest.raises((KeyError, ValueError)):
         q.decode([q.max_token_value + 999])
+
+
+@pytest.mark.parametrize("s", SAMPLES)
+def test_encode_to_numpy_matches_ordinary(pair, s):
+    # disallowed_special=() => ordinary semantics (no raise), as a uint32 array
+    name, q, _ = pair
+    arr = q.encode_to_numpy(s, disallowed_special=())
+    assert isinstance(arr, np.ndarray) and arr.dtype == np.uint32, name
+    assert arr.tolist() == q.encode_ordinary(s), (name, s)
+
+
+@pytest.mark.parametrize("s", SAMPLES)
+def test_encode_to_numpy_matches_tiktoken(pair, s):
+    name, q, t = pair
+    assert np.array_equal(q.encode_to_numpy(s, disallowed_special=()),
+                          t.encode_to_numpy(s, disallowed_special=())), (name, s)
+
+
+def test_encode_to_numpy_raises_on_special_by_default(pair):
+    # same default guard as encode()
+    _, q, _ = pair
+    with pytest.raises(ValueError):
+        q.encode_to_numpy("before <|endoftext|> after")
+
+
+def test_encode_to_numpy_allowed_special_all(pair):
+    name, q, t = pair
+    s = "a <|endoftext|> b"
+    assert np.array_equal(q.encode_to_numpy(s, allowed_special="all"),
+                          t.encode_to_numpy(s, allowed_special="all")), name
