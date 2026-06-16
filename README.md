@@ -19,7 +19,7 @@ itself. See [benchmarks](#benchmarks).
 pip install quicktok-v1
 ```
 
-Wheels for Linux (x86_64, aarch64), macOS (arm64, x86_64), and Windows; Python ≥ 3.9.
+Runs on Linux, Mac and Windows. Python ≥ 3.9 required.
 
 **C++** — via CMake (`find_package` or `FetchContent`), or `make install` and
 pkg-config. There's also a stable **C ABI** (`quicktok.h`) for FFI from any language.
@@ -48,7 +48,7 @@ All encoding names — bundled, gated, imported — are in [Encodings](#encoding
 
 For bulk work (dataset prep, corpus token counting), `encode_batch` tokenizes
 documents in parallel and returns one flat `uint32` token array plus `int64`
-offsets — no per-document Python lists; ~550 MB/s from Python on an M1:
+offsets:
 
 ```python
 tokens, offsets = enc.encode_batch(docs)    # doc i = tokens[offsets[i]:offsets[i+1]]
