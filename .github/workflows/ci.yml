@@ -90,11 +90,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
-        with: { python-version: "3.13" }
+        with: { python-version: "3.14" }   # UCD 16.0.0, matching the committed nfc.bin
       - name: verify bundled data is reproducible from the reference
         run: |
           python -m pip install --upgrade pip
-          pip install regex tiktoken
+          pip install "regex==2026.5.9" tiktoken   # versions recorded in data/*.meta
           # exhaustive: committed Unicode/NFC tables == live reference engine
           python tools/export_unicode.py verify
           python tools/export_unicode_o200k.py verify
@@ -107,12 +107,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: build the test with coverage, run, report src/ line coverage
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }   # non-externally-managed: pip install works
+      - name: build with gcov, run the vector suite, report src/ coverage
         run: |
-          clang++ -O1 -g -std=c++20 -fprofile-instr-generate -fcoverage-mapping \
-            -Iinclude -Isrc test/test_quicktok.cpp src/quicktok.cpp src/trie2_mb.cpp -o covtest
-          LLVM_PROFILE_FILE=cov.profraw ./covtest data
-          llvm-profdata merge -sparse cov.profraw -o cov.profdata
-          echo "=== src/ line coverage (does the vector suite reach backtracking / whitespace alts / wide memo?) ==="
-          llvm-cov report ./covtest -instr-profile=cov.profdata $(ls src/*.cpp src/*.hpp) 2>/dev/null || \
-          llvm-cov report ./covtest -instr-profile=cov.profdata src/
+          pip install gcovr
+          g++ -O0 -g --coverage -std=c++20 -Iinclude -Isrc \
+            test/test_quicktok.cpp src/quicktok.cpp src/trie2_mb.cpp -o covtest
+          ./covtest data
+          echo "=== src/ coverage (does the vector suite reach backtracking / whitespace alts / wide memo?) ==="
+          gcovr -r . --filter 'src/' --txt
