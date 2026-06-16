@@ -12,6 +12,7 @@
 #pragma once
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -63,7 +64,7 @@ struct NFC {
         while (i < n) {
             // ASCII run skip, 8 bytes at a time
             while (i + 8 <= n) {
-                uint64_t w; __builtin_memcpy(&w, t + i, 8);
+                uint64_t w; std::memcpy(&w, t + i, 8);
                 if (w & 0x8080808080808080ull) break;
                 i += 8;
             }
@@ -87,7 +88,7 @@ struct NFC {
         while (i < n) {
             if (t[i] < 0x80) {
                 while (i + 8 <= n) {                       // ASCII run skip
-                    uint64_t w; __builtin_memcpy(&w, t + i, 8);
+                    uint64_t w; std::memcpy(&w, t + i, 8);
                     if (w & 0x8080808080808080ull) break;
                     i += 8;
                 }
