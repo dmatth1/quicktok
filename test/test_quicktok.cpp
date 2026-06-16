@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include <atomic>
+#include <filesystem>
 #include <thread>
 #include <vector>
 
@@ -144,14 +145,15 @@ int main(int argc, char** argv) {
         catch (const std::exception& e) { threw = true; }
         if (!threw) { fails++; printf("  FAIL: load_dir(nonexistent) did not throw\n"); }
 
-        // truncated vocab file
-        FILE* f = fopen("/tmp/qt_trunc.vocab", "wb");
-        uint32_t n = 100256; fwrite(&n, 4, 1, f); fclose(f);   // header only, no records
+        // truncated vocab file (portable temp path — Windows has no /tmp)
+        auto truncp = (std::filesystem::temp_directory_path() / "qt_trunc.vocab").string();
+        FILE* f = fopen(truncp.c_str(), "wb");
+        if (f) { uint32_t n = 100256; fwrite(&n, 4, 1, f); fclose(f); }   // header only, no records
         threw = false;
-        try { auto bad = quicktok::Tokenizer::load("/tmp/qt_trunc.vocab", data + "/uniclass.bin"); }
+        try { auto bad = quicktok::Tokenizer::load(truncp, data + "/uniclass.bin"); }
         catch (const std::exception& e) { threw = true; }
         if (!threw) { fails++; printf("  FAIL: truncated vocab did not throw\n"); }
-        remove("/tmp/qt_trunc.vocab");
+        remove(truncp.c_str());
         if (fails == 0) printf("error handling: OK (bad loads throw)\n");
     }
 
