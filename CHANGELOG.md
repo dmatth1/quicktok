@@ -3,7 +3,7 @@
 All notable changes to quicktok. Format follows [Keep a Changelog](https://keepachangelog.com);
 versioning is [SemVer](https://semver.org).
 
-## [Unreleased]
+## [0.4.0]
 
 ### Changed
 - **`encode()` now matches tiktoken's full signature and semantics** (behavior
