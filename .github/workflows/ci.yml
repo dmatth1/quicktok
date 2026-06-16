@@ -74,3 +74,45 @@ jobs:
           cmake -S . -B build -DQUICKTOK_BUILD_TESTS=ON
           cmake --build build --config Release -j 4
           ctest --test-dir build -C Release --output-on-failure
+      - name: install + find_package consumer    # audit gap #5
+        shell: bash
+        run: |
+          cmake --install build --config Release --prefix "$PWD/_install"
+          cmake -S tests/consumer -B _cons -DCMAKE_PREFIX_PATH="$PWD/_install"
+          cmake --build _cons --config Release -j 4
+          # find the built consumer exe (layout differs per generator) and run it
+          exe=$(find _cons -name 'consumer' -o -name 'consumer.exe' | head -1)
+          "$exe" "$PWD/_install/share/quicktok"
+
+  data-provenance:
+    name: data files match their source-of-truth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: verify bundled data is reproducible from the reference
+        run: |
+          python -m pip install --upgrade pip
+          pip install regex tiktoken
+          # exhaustive: committed Unicode/NFC tables == live reference engine
+          python tools/export_unicode.py verify
+          python tools/export_unicode_o200k.py verify
+          python tools/export_nfc.py verify
+          # vocabs == tiktoken (byte-compare committed files to the source ranks)
+          python tools/check_vocab_provenance.py
+
+  coverage:
+    name: C++ coverage of src/ (informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: build the test with coverage, run, report src/ line coverage
+        run: |
+          clang++ -O1 -g -std=c++20 -fprofile-instr-generate -fcoverage-mapping \
+            -Iinclude -Isrc test/test_quicktok.cpp src/quicktok.cpp src/trie2_mb.cpp -o covtest
+          LLVM_PROFILE_FILE=cov.profraw ./covtest data
+          llvm-profdata merge -sparse cov.profraw -o cov.profdata
+          echo "=== src/ line coverage (does the vector suite reach backtracking / whitespace alts / wide memo?) ==="
+          llvm-cov report ./covtest -instr-profile=cov.profdata $(ls src/*.cpp src/*.hpp) 2>/dev/null || \
+          llvm-cov report ./covtest -instr-profile=cov.profdata src/

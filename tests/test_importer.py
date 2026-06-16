@@ -63,3 +63,25 @@ def test_positive_import_roundtrip(tmp_path):
     enc = quicktok.get_encoding("imptest", data_dir=str(tmp_path))
     s = "hello imported tokenizer 123"
     assert enc.decode(enc.encode_ordinary(s)) == s
+
+
+def test_tekken_synthetic_import_roundtrip(tmp_path):
+    """Hermetic positive import: a synthetic tekken.json (real o200k vocab + the
+    Tekken v3 pattern) imports, the importer's built-in verification confirms the
+    tekken scanner is byte-exact vs the tiktoken reference, and it round-trips.
+    Covers the importer positive pipeline AND the pretok_next_tekken scanner."""
+    import base64, json
+    tiktoken = pytest.importorskip("tiktoken")
+    from quicktok._import_core import TEKKEN_PAT
+    ranks = tiktoken.get_encoding("o200k_base")._mergeable_ranks
+    vocab = [{"rank": r, "token_bytes": base64.b64encode(b).decode()} for b, r in ranks.items()]
+    tj = {"config": {"pattern": TEKKEN_PAT, "default_vocab_size": len(ranks),
+                     "default_num_special_tokens": 0},
+          "vocab": vocab, "special_tokens": []}
+    src = tmp_path / "tekken.json"          # filename must contain "tekken"
+    src.write_text(json.dumps(tj))
+    quicktok.import_tokenizer(str(src), "tekkentest", data_dir=str(tmp_path))
+    enc = quicktok.get_encoding("tekkentest", data_dir=str(tmp_path))
+    assert enc.n_vocab > 0
+    for s in ["Hello WORLD test 123", "café ÀÉÎ lower 42", "punct!!!  \n\n  spaces", "日本語 mix"]:
+        assert enc.decode(enc.encode_ordinary(s)) == s, s
