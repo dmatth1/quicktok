@@ -181,6 +181,7 @@ Python wheel:
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
 | **quicktok** (native) | **72.3** | **88.7** | **46.3** |
+| quicktok (Python, numpy) | 59.4 | 86.7 | 37.8 |
 | quicktok (Python) | 46.5 | 53.1 | 30.6 |
 | bpe-openai | 27.0 | 31.5 | 23.6 |
 | tiktoken-rs | 11.7 | 10.3 | 11.2 |
@@ -192,6 +193,7 @@ Python wheel:
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
 | **quicktok** (native) | **59.1** | **70.7** | **36.6** |
+| quicktok (Python, numpy) | 50.3 | 68.5 | 32.6 |
 | quicktok (Python) | 39.2 | 45.3 | 27.4 |
 | bpe-openai | 25.3 | 29.3 | 23.8 |
 | tiktoken-rs | 17.3 | 15.7 | 15.4 |
@@ -199,9 +201,12 @@ Python wheel:
 | TokenDagger | 6.7 | 7.4 | 6.4 |
 
 Same ordering as the M1 tables, the Python wheel included (o200k runs at a steady
-~0.80× of cl100k native). (One footnote: TokenDagger diverges from the other four
-by a single token on Pile/cl100k — a known TokenDagger edge case, not an encoder
-bug.)
+~0.80× of cl100k native). The two Python rows are the same wheel: `encode()`
+returns a `list[int]`, while `encode_to_numpy()` returns a `uint32` array and
+skips building millions of Python ints — near-native on large inputs (code, the
+most token-dense corpus, is 86.7 vs 88.7 native). (One footnote: TokenDagger
+diverges from the other four by a single token on Pile/cl100k — a known
+TokenDagger edge case, not an encoder bug.)
 </details>
 
 <details>
