@@ -53,6 +53,7 @@ static int run_vectors(const quicktok::Tokenizer& tok, const std::string& path, 
 }
 
 int main(int argc, char** argv) {
+    setvbuf(stdout, nullptr, _IONBF, 0);   // unbuffered: progress survives a crash (Windows CI)
     std::string data = argc > 1 ? argv[1] : "data";
     int fails = 0;
     auto tok = quicktok::Tokenizer::load_dir(data);
