@@ -181,7 +181,7 @@ Python wheel:
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
 | **quicktok** (native) | **72.3** | **88.7** | **46.3** |
-| quicktok (Python, numpy) | 59.4 | 86.7 | 37.8 |
+| quicktok (Python) | 59.4 | 86.7 | 37.8 |
 | bpe-openai | 27.0 | 31.5 | 23.6 |
 | tiktoken-rs | 11.7 | 10.3 | 11.2 |
 | tiktoken (Python) | 10.4 | 9.2 | 9.6 |
@@ -192,7 +192,7 @@ Python wheel:
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
 | **quicktok** (native) | **59.1** | **70.7** | **36.6** |
-| quicktok (Python, numpy) | 50.3 | 68.5 | 32.6 |
+| quicktok (Python) | 50.3 | 68.5 | 32.6 |
 | bpe-openai | 25.3 | 29.3 | 23.8 |
 | tiktoken-rs | 17.3 | 15.7 | 15.4 |
 | tiktoken (Python) | 14.4 | 13.6 | 13.9 |
