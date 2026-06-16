@@ -10,7 +10,8 @@ make test          # C++ + C ABI, all encodings exact vs committed vectors
 make bench         # native throughput + parallel scaling
 ```
 
-`make test` is the gate: it verifies every encoding against reference-derived vectors (tiktoken / Hugging Face / Meta)
+For the Python API: `pip install ".[test]" && pytest tests/` (parity vs tiktoken,
+batch, importer). `make test` is the gate for the C++ core: it verifies every encoding against reference-derived vectors (tiktoken / Hugging Face / Meta)
 and round-trips decode. CI also runs ASan+UBSan and a cross-platform build matrix.
 
 ## Ground rules

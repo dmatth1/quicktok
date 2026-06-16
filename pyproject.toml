@@ -22,9 +22,15 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/dmatth1/quicktok"
 
+[project.optional-dependencies]
+test = ["pytest>=7", "tiktoken", "numpy>=1.21"]
+
 [tool.scikit-build]
 # whole repo is the source; the SKBUILD-guarded block in CMakeLists builds the
 # Python extension. sdist defaults to git-tracked files, so all core sources +
 # data are included automatically.
 cmake.source-dir = "."
 wheel.packages = ["python/quicktok"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
