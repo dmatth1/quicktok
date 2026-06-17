@@ -117,35 +117,44 @@ class Tokenizer {
 
 ## Benchmarks
 
-Five encoders, same machine (Apple M1), single thread, every output verified
-token-for-token identical before timing, every reference called through the same
-raw API its own benchmark uses. Three 25 MB corpora streamed from their real
+Same machine (Apple M1), single thread, every output verified token-for-token
+identical before timing, every reference called through the same raw API its own
+benchmark uses, one back-to-back run. Three 25 MB corpora streamed from their real
 sources — **The Pile** (diverse), **GitHub code**, **Common Crawl**
-(multilingual) — across both common OpenAI encodings (throughput in **MB/s**):
+(multilingual) — across both common OpenAI encodings (throughput in **MB/s**).
+quicktok is shown three ways: native C++, the Python `encode_to_numpy()` fast path,
+and the plain Python `encode()` (which builds a `list[int]`):
 
 **cl100k_base** (GPT-3.5 / GPT-4)
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok (native)** | **121.7** | **139.2** | **71.3** |
-| **quicktok (Python)** | **77.9** | **83.6** | **49.7** |
-| bpe-openai | 36.6 | 38.7 | 28.9 |
-| rs-bpe | 30.9 | 34.7 | 23.5 |
-| tiktoken-rs | 15.4 | 13.8 | 13.3 |
-| tiktoken (Python) | 13.6 | 12.8 | 12.3 |
-| TokenDagger | 11.1 | 11.9 | 10.7 |
+| **quicktok (native)** | **92.8** | **114.9** | **55.6** |
+| **quicktok (Python, numpy)** | **92.5** | **109.5** | **54.9** |
+| quicktok (Python) | 64.3 | 75.9 | 41.6 |
+| bpe-openai | 29.8 | 34.1 | 24.0 |
+| tiktoken-rs | 13.6 | 12.9 | 11.9 |
+| tiktoken (Python) | 12.6 | 11.8 | 10.9 |
+| TokenDagger | 9.7 | 10.4 | 9.3 |
 
 **o200k_base** (GPT-4o)
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok (native)** | **102.2** | **129.5** | **52.9** |
-| **quicktok (Python)** | **65.7** | **79.9** | **43.3** |
-| bpe-openai | 35.6 | 41.4 | 28.4 |
-| rs-bpe | 30.4 | 33.9 | 23.2 |
-| tiktoken-rs | 23.4 | 22.3 | 16.6 |
-| tiktoken (Python) | 20.4 | 18.6 | 14.9 |
-| TokenDagger | 10.4 | 11.3 | 9.3 |
+| **quicktok (native)** | **73.4** | **91.7** | **39.0** |
+| **quicktok (Python, numpy)** | **72.0** | **93.7** | **39.0** |
+| quicktok (Python) | 57.1 | 65.4 | 33.5 |
+| bpe-openai | 27.4 | 32.4 | 22.5 |
+| tiktoken-rs | 19.9 | 18.9 | 14.8 |
+| tiktoken (Python) | 17.3 | 16.6 | 13.4 |
+| TokenDagger | 8.9 | 9.9 | 7.9 |
+
+`encode_to_numpy()` returns a `uint32` array directly, skipping the per-token
+Python-list marshalling — so from Python it runs at **near-native speed** (~3× over
+bpe-openai, ~7× over tiktoken). Absolute MB/s is machine- and thermal-dependent
+(~15% swing on M1); the same-run ratios are the stable signal. (rs-bpe is omitted
+from this run — no Python 3.14 wheel; it's a binding over the same `bpe` crate as
+the bpe-openai row.)
 
 **Reproduce these tables:** `make bench-compare` — see [bench/README.md](https://github.com/dmatth1/quicktok/blob/main/bench/README.md).
 
