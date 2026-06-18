@@ -159,23 +159,38 @@ the bpe-openai row.)
 **Reproduce these tables:** `make bench-compare` — see [bench/README.md](https://github.com/dmatth1/quicktok/blob/main/bench/README.md).
 
 <details>
-<summary><b>Parallel / batch scaling</b> (Apple M1, 8 threads; measured at v0.3.2)</summary>
+<summary><b>Parallel / batch scaling</b> (Apple M1 Pro — 10 cores, 8P+2E; measured at v0.4.0)</summary>
 
-<br>Native `encode_batch()` (`make bench`), cl100k:
+<br>Native `encode_batch()` (`make bench`), MB/s and speedup vs single-thread:
 
-| threads | MB/s | speedup |
-|---:|---:|---:|
-| 1 | 110 | 1.0× |
-| 2 | 210 | 1.9× |
-| 4 | 397 | 3.6× |
-| 8 | **706** | **6.4×** |
+| threads | cl100k | | o200k | |
+|---:|---:|---:|---:|---:|
+| 1 | 95 | 1.0× | 81 | 1.0× |
+| 2 | 207 | 2.2× | 162 | 2.0× |
+| 4 | 381 | 4.0× | 353 | 4.4× |
+| 8 | 570 | 6.0× | 463 | 5.7× |
+| **10** | **683** | **7.2×** | **601** | **7.4×** |
+| 20 | 645 | 6.8× | 496 | 6.1× |
 
-From Python (`make bench-py`), cl100k, 10 threads:
+Scaling tracks the **core count**: near-linear across the 8 performance cores,
+the 2 efficiency cores add a final ~20%, and the peak lands at 10 threads (= the
+machine's core count). Oversubscribing (20 threads) regresses — there are no more
+cores to use, just contention. On your hardware the knee will be wherever
+`std::thread::hardware_concurrency()` lands; `encode_batch(views, /*threads=*/0)`
+auto-picks that value.
 
-| Python API | quicktok | tiktoken | speedup |
-|---|---:|---:|---:|
-| single-thread | 77 MB/s | 15 MB/s | **5.0×** |
-| `encode_batch` | **550 MB/s** | 24 MB/s (batch) | **24×** |
+From Python (`make bench-py`), batch on all 10 cores vs tiktoken:
+
+| encoder | API | quicktok | tiktoken | speedup |
+|---|---|---:|---:|---:|
+| cl100k | single-thread | 70 MB/s | 14 MB/s | **5.2×** |
+| cl100k | `encode_batch` (10 thr) | **456 MB/s** | 20 MB/s | **23×** |
+| o200k | single-thread | 58 MB/s | 19 MB/s | **3.0×** |
+| o200k | `encode_batch` (10 thr) | **445 MB/s** | 22 MB/s | **20×** |
+
+The Python batch path reaches ~6.5× (cl100k) / ~7.7× (o200k) over its own
+single-thread rate — the GIL is dropped around the native batch loop, so Python
+callers get the same multicore scaling as the C++ API.
 </details>
 
 <details>

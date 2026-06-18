@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <string>
 #include <thread>
+#include <algorithm>
 #include <vector>
 using clk = std::chrono::steady_clock;
 
@@ -49,12 +50,16 @@ int main(int argc, char** argv) {
         printf("  single-thread : %7.1f MB/s   %6.2f Mtok/s\n", MB / st, ntok / st / 1e6);
 
         printf("  batch (encode_batch):\n");
+        // thread ladder: powers of two, the machine's core count, and 2x cores to
+        // show where it saturates / oversubscribes. Deduped + sorted.
+        std::vector<unsigned> ladder = {1, 2, 4, 8, hw ? hw : 8u, hw ? 2u * hw : 16u};
+        std::sort(ladder.begin(), ladder.end());
+        ladder.erase(std::unique(ladder.begin(), ladder.end()), ladder.end());
         double t1 = 0;
-        for (unsigned T : {1u, 2u, 4u, 8u}) {
-            if (T > 1 && T > hw) break;
+        for (unsigned T : ladder) {
             double t = best_of(5, [&]{ auto r = tok.encode_batch(views, T); (void)r; });
             if (T == 1) t1 = t;
-            printf("    %u thread%-2s: %7.1f MB/s   %6.2f Mtok/s   %4.2fx\n",
+            printf("    %2u thread%-2s: %7.1f MB/s   %6.2f Mtok/s   %4.2fx\n",
                    T, T == 1 ? "" : "s", MB / t, ntok / t / 1e6, t1 / t);
         }
         printf("\n");
