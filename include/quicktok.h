@@ -13,7 +13,8 @@ extern "C" {
 
 typedef struct qt_tokenizer qt_tokenizer;
 
-/* encoding: "cl100k_base" or "o200k_base"; dir holds the data files.
+/* encoding: any built-in name ("cl100k_base", "o200k_base", "o200k_harmony",
+ * "llama3", "qwen3", "llama4") or an imported one; dir holds the data files.
  * Returns NULL on error and writes a NUL-terminated message into errbuf. */
 qt_tokenizer* qt_load_dir(const char* dir, const char* encoding,
                           char* errbuf, size_t errbuf_len);
