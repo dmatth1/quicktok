@@ -30,8 +30,18 @@ All encoding names — bundled, gated, imported — are in
 ## Drop-in for tiktoken
 
 Same method names and semantics, so a tiktoken `Encoding` swaps for
-`quicktok.get_encoding(...)`. Like tiktoken, `encode` raises on a stray special
-token unless you pass `allowed_special` (or call `encode_ordinary`).
+`quicktok.get_encoding(...)`. `encode` carries tiktoken's full signature:
+
+```python
+enc.encode(text, *, allowed_special=set(), disallowed_special="all")
+```
+
+Like tiktoken, a special-token string in the input **raises `ValueError`** by
+default. Pass `allowed_special="all"` (or a set) to encode specials as ids, or
+`disallowed_special=()` to disable the check; `encode_ordinary(text)` is the
+"specials as plain text, never raises" path. `decode` raises `KeyError` on an
+unknown id and takes `errors=` (default `"replace"`); `decode_bytes` is the
+lossless path.
 
 ## Bulk / batch
 
@@ -54,6 +64,43 @@ Python-list marshalling — so from Python it runs at **near-native speed** (~3�
 over bpe-openai, ~7× over tiktoken) on large inputs. The plain `encode()` builds
 a `list[int]` and is the convenient default for smaller inputs. See the
 [benchmarks](../bench/README.md#results) for the native / numpy / list split.
+
+## Method reference
+
+A `Tokenizer` mirrors tiktoken's `Encoding` across the common surface.
+
+**Encode**
+
+| method | returns | notes |
+|---|---|---|
+| `encode(text, *, allowed_special=set(), disallowed_special="all")` | `list[int]` | raises on a disallowed special, like tiktoken |
+| `encode_ordinary(text)` | `list[int]` | specials as plain text, never raises |
+| `encode_with_special(text)` / `encode_with_special_tokens(text)` | `list[int]` | all specials → ids |
+| `encode_to_numpy(text, ...)` | `uint32` array | fastest single-encode path (see above) |
+| `encode_batch(texts, threads=0, with_special=False)` | `(uint32 tokens, int64 offsets)` | parallel; doc i = `tokens[offsets[i]:offsets[i+1]]` |
+| `encode_single_token(text_or_bytes)` | `int` | the id for exactly these bytes |
+| `count(text)` | `int` | tokens `encode` would produce |
+
+**Decode**
+
+| method | returns | notes |
+|---|---|---|
+| `decode(ids, errors="replace")` | `str` | raises `KeyError` on unknown id |
+| `decode_bytes(ids)` | `bytes` | lossless |
+| `decode_batch(batch, errors="replace")` | `list[str]` | |
+| `decode_single_token_bytes(id)` | `bytes` | |
+
+**Introspect**
+
+| member | returns | notes |
+|---|---|---|
+| `n_vocab` | `int` | max id + 1, **including** specials (cl100k → 100277) |
+| `max_token_value` | `int` | |
+| `eot_token` | `int` | |
+| `special_tokens_set` | `set[str]` | |
+| `is_special_token(id)` | `bool` | |
+| `token_byte_values()` | `list[bytes]` | lexicographic, like tiktoken's `sorted_token_bytes` |
+| `name` | `str` | the encoding name |
 
 ## Imported encodings & data location
 
