@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20%20%C2%B7%20zero--deps-00599C.svg)
 
-A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++.
+A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++,
+with Python wheels on PyPI (`pip install quicktok-v1`).
 Token ids are **byte-identical to [tiktoken](https://github.com/openai/tiktoken)**;
 encoding runs **2–3.4× faster** than the fastest exact tokenizer we know of
 ([bpe-openai](https://github.com/github/rust-gems)) and **3.5–11× faster than
@@ -26,17 +27,16 @@ before timing. Headline: **cl100k_base on The Pile** (Apple M1).
 ```mermaid
 xychart-beta
     title "cl100k_base · The Pile · MB/s (single thread, M1)"
-    x-axis ["quicktok", "quicktok-py", "bpe-openai", "tiktoken-rs", "tiktoken", "TokenDagger"]
+    x-axis ["quicktok", "bpe-openai", "tiktoken-rs", "tiktoken", "TokenDagger"]
     y-axis "MB/s" 0 --> 100
-    bar [92.8, 92.5, 29.8, 13.6, 12.6, 9.7]
+    bar [92.8, 29.8, 13.6, 12.6, 9.7]
 ```
 
 **cl100k_base** (GPT-3.5 / GPT-4), MB/s across three 25 MB corpora:
 
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
-| **quicktok (native)** | **92.8** | **114.9** | **55.6** |
-| quicktok (Python, numpy) | 92.5 | 109.5 | 54.9 |
+| **quicktok** | **92.8** | **114.9** | **55.6** |
 | bpe-openai | 29.8 | 34.1 | 24.0 |
 | tiktoken-rs | 13.6 | 12.9 | 11.9 |
 | tiktoken (Python) | 12.6 | 11.8 | 10.9 |
