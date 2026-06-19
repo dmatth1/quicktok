@@ -6,6 +6,12 @@ versioning is [SemVer](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- **Parity matrix** (README) + CI extension: every bundled encoding's byte-exact
+  status against *its own* reference is now spelled out and machine-checked —
+  o200k_harmony added to the tiktoken parity suite (skips where a tiktoken version
+  lacks it), qwen3 byte-exact vs `transformers` in the new transformers CI lane,
+  and a "token ids: byte-exact" badge. llama3 is honestly footnoted (exact vs
+  Meta's rank tokenizer; ~99.9998% vs HF merge-list inference).
 - **Per-token offsets** (`encode_with_offsets(text)` -> `(ids, spans)`): each
   `spans[i]` is the `(start, end)` range of the input that token `i` covers — for
   NER, span highlighting, streaming detokenization, training alignment.

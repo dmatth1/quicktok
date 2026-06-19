@@ -10,7 +10,11 @@ from conftest import TIKTOKEN_ENCODINGS, SAMPLES
 @pytest.fixture(params=TIKTOKEN_ENCODINGS)
 def pair(request, tiktoken_mod):
     name = request.param
-    return name, quicktok.get_encoding(name), tiktoken_mod.get_encoding(name)
+    try:
+        ref = tiktoken_mod.get_encoding(name)        # some tiktoken versions lack o200k_harmony
+    except (ValueError, KeyError):
+        pytest.skip(f"installed tiktoken has no {name}")
+    return name, quicktok.get_encoding(name), ref
 
 
 @pytest.mark.parametrize("s", SAMPLES)

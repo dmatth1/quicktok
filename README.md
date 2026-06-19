@@ -4,6 +4,7 @@
 [![CI](https://github.com/dmatth1/quicktok/actions/workflows/ci.yml/badge.svg)](https://github.com/dmatth1/quicktok/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20%20%C2%B7%20zero--deps-00599C.svg)
+![token ids: byte-exact](https://img.shields.io/badge/token_ids-byte--exact-2ea44f.svg)
 
 A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++,
 with Python wheels (`pip install quicktok-v1`).
@@ -108,19 +109,25 @@ Same algorithm as bpe-openai (exact backtracking BPE) — the speed is data-stru
 ## Encodings
 
 Five encodings ship in the repo; Llama-4's code path ships too, but its vocab is
-gated. Each is byte-exact vs its reference:
+gated. Token ids are **byte-exact vs each model's own reference**, checked in CI:
 
-| name | model family | reference |
-|---|---|---|
-| `cl100k_base` | GPT-3.5 / GPT-4 | tiktoken (the default) |
-| `o200k_base` | GPT-4o | tiktoken |
-| `o200k_harmony` | GPT-OSS | tiktoken — o200k_base plus the harmony chat specials |
-| `llama3` | Llama 3 | Meta's tiktoken-rank BPE |
-| `qwen3` | Qwen2.5 / Qwen3 | Hugging Face tokenizers, including its NFC normalization |
-| `llama4` | Llama 4 | Meta — **not bundled** (gated; bring your own vocab) |
+| name | model family | reference | verified |
+|---|---|---|---|
+| `cl100k_base` | GPT-3.5 / GPT-4 | tiktoken (the default) | byte-exact in CI |
+| `o200k_base` | GPT-4o | tiktoken | byte-exact in CI |
+| `o200k_harmony` | GPT-OSS | tiktoken — o200k_base + harmony specials | byte-exact in CI |
+| `llama3` | Llama 3 | Meta's tiktoken-rank BPE | byte-exact vs Meta&nbsp;¹ |
+| `qwen3` | Qwen2.5 / Qwen3 | Hugging Face `transformers` (incl. NFC) | byte-exact in CI&nbsp;² |
+| `llama4` | Llama 4 | Meta — **not bundled** (gated) | verify-on-import |
 
-Per-encoding details (NFC, rank-vs-merges, gating) and **importing any other
-byte-level-BPE tokenizer** → **[docs/encodings.md](docs/encodings.md)**.
+¹ matches Meta's original rank tokenizer; HF / llama.cpp merge-list inference
+agrees on ~99.9998% of tokens (rare rank-vs-merge splits).
+&nbsp;² checked against `AutoTokenizer` (ids **and** offsets) in the transformers CI lane.
+
+And **every import is verified byte-for-byte before it's written** — a single
+token mismatch refuses the import, so a wrong encoding can't ship. Per-encoding
+details (NFC, rank-vs-merges, gating) and **importing any other byte-level-BPE
+tokenizer** → **[docs/encodings.md](docs/encodings.md)**.
 
 ## Docs
 
