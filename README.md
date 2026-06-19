@@ -77,7 +77,14 @@ text = enc.decode(ids)
 
 arr = enc.encode_to_numpy(big_text)      # uint32 array, fastest single-encode path
 tokens, offsets = enc.encode_batch(docs) # parallel; flat uint32 + int64 offsets
+
+quicktok.patch_transformers()            # AutoTokenizer.from_pretrained -> quicktok-backed
 ```
+
+Using HuggingFace? `quicktok.patch_transformers()` makes
+`AutoTokenizer.from_pretrained(...)` quicktok-backed for supported models
+(byte-exact fast path; unsupported models pass straight through) — see
+[docs/python.md](docs/python.md#drop-in-for-huggingface-autotokenizer).
 
 **C++** — full API and C ABI in [docs/cpp.md](docs/cpp.md):
 

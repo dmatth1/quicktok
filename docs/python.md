@@ -27,6 +27,38 @@ quicktok.get_encoding("tekken")
 All encoding names — bundled, gated, imported — are in
 [docs/encodings.md](encodings.md).
 
+## Drop-in for HuggingFace `AutoTokenizer`
+
+Most code reaches a tokenizer through `transformers.AutoTokenizer`, not tiktoken.
+`patch_transformers()` makes `AutoTokenizer.from_pretrained(...)` return a
+quicktok-backed tokenizer **when quicktok supports the model's grammar**, and the
+unmodified HF tokenizer otherwise — one call, existing code unchanged:
+
+```python
+import quicktok
+quicktok.patch_transformers()
+
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B")  # quicktok-backed
+ids = tok.encode(text)                       # fast path through quicktok
+out = tok(text)["input_ids"]                 # same
+
+quicktok.unpatch_transformers()              # restore the original
+```
+
+Exactness, not approximation. The wrapper only fast-paths a call whose output it
+can reproduce **byte-for-byte**: plain `str` input, no per-call options it doesn't
+model (padding, truncation, `return_tensors`, …), and special tokens only when the
+model adds them as a verified static prefix/suffix (e.g. a single BOS). Everything
+else — decode, batching, chat templates, an unsupported model — delegates to the
+real HF tokenizer, so behaviour never changes. Models whose grammar quicktok
+doesn't have (or that need `import_tokenizer` first) pass straight through.
+
+- `wrap_pretrained(hf_tokenizer, quicktok_encoding_or_None)` wraps an
+  already-constructed HF tokenizer directly; `None` returns it untouched.
+- Coverage extends automatically to anything `import_tokenizer` /
+  `encoding_for_model` resolve.
+
 ## Drop-in for tiktoken
 
 Same method names and semantics, so a tiktoken `Encoding` swaps for

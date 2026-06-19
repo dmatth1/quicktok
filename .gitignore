@@ -9,6 +9,7 @@ python/_skbuild/
 python/build/
 python/dist/
 python/*.egg-info/
+python/quicktok/data/
 python/README.md
 wheelhouse/
 *.whl

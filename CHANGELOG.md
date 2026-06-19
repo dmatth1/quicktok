@@ -3,6 +3,21 @@
 All notable changes to quicktok. Format follows [Keep a Changelog](https://keepachangelog.com);
 versioning is [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- **HuggingFace `AutoTokenizer` drop-in** (`quicktok.patch_transformers()`):
+  monkey-patches `transformers.AutoTokenizer.from_pretrained` so it returns a
+  quicktok-backed tokenizer for models whose grammar quicktok supports, and the
+  unmodified HF tokenizer otherwise — one call, existing code unchanged.
+  Exactness-preserving: only fast-paths a call whose output it can reproduce
+  byte-for-byte (plain `str`, no per-call options it doesn't model, special
+  tokens only as a verified static prefix/suffix); everything else delegates to
+  the real HF tokenizer. `unpatch_transformers()` restores the original;
+  `wrap_pretrained(hf, enc)` wraps a constructed tokenizer directly. The HF
+  ecosystem (transformers/datasets, vLLM/SGLang/TGI preprocessing) reaches a
+  tokenizer through `AutoTokenizer`, not tiktoken — this is the transparent swap.
+
 ## [0.4.0]
 
 ### Changed
