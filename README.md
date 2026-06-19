@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20%20%C2%B7%20zero--deps-00599C.svg)
 
-A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++
+A fast, exact BPE tokenizer for OpenAI and open-model encodings, written in C++,
 with Python wheels (`pip install quicktok-v1`).
 Token ids are **byte-identical to [tiktoken](https://github.com/openai/tiktoken)**;
 encoding runs **2–3.4× faster** than the fastest exact tokenizer we know of
