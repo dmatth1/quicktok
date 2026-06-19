@@ -6,6 +6,14 @@ versioning is [SemVer](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- **Per-token offsets** (`encode_with_offsets(text)` -> `(ids, spans)`): each
+  `spans[i]` is the `(start, end)` range of the input that token `i` covers — for
+  NER, span highlighting, streaming detokenization, training alignment.
+  `unit="byte"` (default) gives exact, gap-free UTF-8 byte offsets that tile the
+  input (each span is precisely the token's bytes); `unit="char"` gives code-point
+  offsets that are **byte-identical to HuggingFace's `return_offsets_mapping=True`**
+  (CI-verified against `AutoTokenizer`). Closes the main HF-migrant API gap; no
+  encode hot-path change (offsets derive from the lossless round-trip invariant).
 - **HuggingFace `AutoTokenizer` drop-in** (`quicktok.patch_transformers()`):
   monkey-patches `transformers.AutoTokenizer.from_pretrained` so it returns a
   quicktok-backed tokenizer for models whose grammar quicktok supports, and the

@@ -72,8 +72,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install ".[test]" transformers
           # exercises patch/unpatch + a real end-to-end byte-exact check through
-          # AutoTokenizer (downloads a small open tokenizer; the e2e test skips if offline)
-          python -m pytest tests/test_hf.py -v
+          # AutoTokenizer and char-offset == HF offset_mapping parity (downloads a
+          # small open tokenizer; the network-gated tests skip if offline)
+          python -m pytest tests/test_hf.py tests/test_offsets.py -v
 
   cmake-test:
     name: cmake+ctest ${{ matrix.os }}

@@ -39,6 +39,16 @@ public:
     // alias under the name tiktoken-rs / TokenDagger use.
     std::vector<uint32_t> encode_with_special_tokens(std::string_view text) const { return encode_with_special(text); }
 
+    // ordinary encode + per-token byte offsets. Appends ids (encode_ordinary
+    // semantics) and fills `bounds` with ids.size()+1 byte boundaries: the i-th
+    // appended token covers encoded bytes [bounds[i], bounds[i+1]); bounds[0]=0.
+    // Exact by construction (ordinary encode round-trips losslessly). For
+    // non-normalizing encodings the offsets index the input UTF-8 bytes; for NFC
+    // encodings (Qwen) they index the NFC-normalized text.
+    void encode_with_offsets(const uint8_t* text, size_t len,
+                             std::vector<uint32_t>& ids,
+                             std::vector<uint32_t>& bounds) const;
+
     // number of tokens encode() would produce (same cost as encode)
     size_t count(std::string_view text) const;
 

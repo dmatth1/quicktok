@@ -97,6 +97,27 @@ over bpe-openai, ~7× over tiktoken) on large inputs. The plain `encode()` build
 a `list[int]` and is the convenient default for smaller inputs. See the
 [benchmarks](../bench/README.md#results) for the native / numpy / list split.
 
+## Per-token offsets (token ↔ text spans)
+
+`encode_with_offsets(text)` returns `(ids, spans)` where `spans[i]` is the
+`(start, end)` range of the input that token `i` covers — for NER, span
+highlighting, streaming detokenization, and training alignment:
+
+```python
+ids, spans = enc.encode_with_offsets("hello world")     # byte spans (default)
+for tid, (lo, hi) in zip(ids, spans):
+    assert enc.decode_bytes([tid]) == "hello world".encode()[lo:hi]   # exact
+
+ids, spans = enc.encode_with_offsets(text, unit="char")  # HF offset_mapping shape
+```
+
+- **`unit="byte"`** (default): UTF-8 byte offsets, **exact and gap-free** — the
+  spans tile the input and each is precisely the token's bytes (ordinary encode
+  round-trips losslessly, so this is exact by construction).
+- **`unit="char"`**: code-point offsets — **byte-identical to HuggingFace's
+  `return_offsets_mapping=True`** (CI-verified against `AutoTokenizer`). Exact for
+  non-NFC encodings; for NFC encodings (Qwen) offsets index the normalized text.
+
 ## Method reference
 
 A `Tokenizer` mirrors tiktoken's `Encoding` across the common surface.
@@ -111,6 +132,7 @@ A `Tokenizer` mirrors tiktoken's `Encoding` across the common surface.
 | `encode_to_numpy(text, ...)` | `uint32` array | fastest single-encode path (see above) |
 | `encode_batch(texts, threads=0, with_special=False)` | `(uint32 tokens, int64 offsets)` | parallel; doc i = `tokens[offsets[i]:offsets[i+1]]` |
 | `encode_single_token(text_or_bytes)` | `int` | the id for exactly these bytes |
+| `encode_with_offsets(text, *, unit="byte")` | `(list[int], list[(int,int)])` | ids + per-token spans; `unit="byte"` exact byte offsets, `unit="char"` == HF `offset_mapping` |
 | `count(text)` | `int` | tokens `encode` would produce |
 
 **Decode**
