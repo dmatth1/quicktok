@@ -73,5 +73,8 @@ def import_tokenizer(source, name, data_dir=None, corpus=()):
     return _imp(source, name, data_dir, corpus)
 
 
+from .hf import patch_transformers, unpatch_transformers, wrap_pretrained  # noqa: E402
+
 __all__ = ["Tokenizer", "get_encoding", "encoding_for_model", "count_batch",
-           "import_tokenizer", "MODEL_TO_ENCODING", "__version__"]
+           "import_tokenizer", "patch_transformers", "unpatch_transformers",
+           "wrap_pretrained", "MODEL_TO_ENCODING", "__version__"]

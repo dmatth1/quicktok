@@ -60,6 +60,22 @@ jobs:
           pip install ".[test]"
           python -m pytest tests/ -q
 
+  hf-dropin:
+    name: HuggingFace AutoTokenizer drop-in (transformers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.13" }
+      - name: install quicktok + transformers (tokenizer-only, no torch) and run the HF drop-in tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[test]" transformers
+          # exercises patch/unpatch + a real end-to-end byte-exact check through
+          # AutoTokenizer and char-offset == HF offset_mapping parity (downloads a
+          # small open tokenizer; the network-gated tests skip if offline)
+          python -m pytest tests/test_hf.py tests/test_offsets.py -v
+
   cmake-test:
     name: cmake+ctest ${{ matrix.os }}
     strategy:

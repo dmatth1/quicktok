@@ -1,7 +1,8 @@
 import pytest
 
-# Encodings that have a direct tiktoken reference (for byte-exact parity tests).
-TIKTOKEN_ENCODINGS = ["cl100k_base", "o200k_base"]
+# Encodings with a direct tiktoken reference (byte-exact parity). o200k_harmony
+# ships only on newer tiktoken — the parity fixture skips it where unavailable.
+TIKTOKEN_ENCODINGS = ["cl100k_base", "o200k_base", "o200k_harmony"]
 # All encodings bundled in the wheel (parity-tested where a reference exists;
 # otherwise round-trip / invariant tested).
 BUNDLED = ["cl100k_base", "o200k_base", "o200k_harmony", "llama3", "qwen3"]

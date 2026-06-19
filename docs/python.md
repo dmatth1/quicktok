@@ -27,6 +27,38 @@ quicktok.get_encoding("tekken")
 All encoding names — bundled, gated, imported — are in
 [docs/encodings.md](encodings.md).
 
+## Drop-in for HuggingFace `AutoTokenizer`
+
+Most code reaches a tokenizer through `transformers.AutoTokenizer`, not tiktoken.
+`patch_transformers()` makes `AutoTokenizer.from_pretrained(...)` return a
+quicktok-backed tokenizer **when quicktok supports the model's grammar**, and the
+unmodified HF tokenizer otherwise — one call, existing code unchanged:
+
+```python
+import quicktok
+quicktok.patch_transformers()
+
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B")  # quicktok-backed
+ids = tok.encode(text)                       # fast path through quicktok
+out = tok(text)["input_ids"]                 # same
+
+quicktok.unpatch_transformers()              # restore the original
+```
+
+Exactness, not approximation. The wrapper only fast-paths a call whose output it
+can reproduce **byte-for-byte**: plain `str` input, no per-call options it doesn't
+model (padding, truncation, `return_tensors`, …), and special tokens only when the
+model adds them as a verified static prefix/suffix (e.g. a single BOS). Everything
+else — decode, batching, chat templates, an unsupported model — delegates to the
+real HF tokenizer, so behaviour never changes. Models whose grammar quicktok
+doesn't have (or that need `import_tokenizer` first) pass straight through.
+
+- `wrap_pretrained(hf_tokenizer, quicktok_encoding_or_None)` wraps an
+  already-constructed HF tokenizer directly; `None` returns it untouched.
+- Coverage extends automatically to anything `import_tokenizer` /
+  `encoding_for_model` resolve.
+
 ## Drop-in for tiktoken
 
 Same method names and semantics, so a tiktoken `Encoding` swaps for
@@ -65,6 +97,27 @@ over bpe-openai, ~7× over tiktoken) on large inputs. The plain `encode()` build
 a `list[int]` and is the convenient default for smaller inputs. See the
 [benchmarks](../bench/README.md#results) for the native / numpy / list split.
 
+## Per-token offsets (token ↔ text spans)
+
+`encode_with_offsets(text)` returns `(ids, spans)` where `spans[i]` is the
+`(start, end)` range of the input that token `i` covers — for NER, span
+highlighting, streaming detokenization, and training alignment:
+
+```python
+ids, spans = enc.encode_with_offsets("hello world")     # byte spans (default)
+for tid, (lo, hi) in zip(ids, spans):
+    assert enc.decode_bytes([tid]) == "hello world".encode()[lo:hi]   # exact
+
+ids, spans = enc.encode_with_offsets(text, unit="char")  # HF offset_mapping shape
+```
+
+- **`unit="byte"`** (default): UTF-8 byte offsets, **exact and gap-free** — the
+  spans tile the input and each is precisely the token's bytes (ordinary encode
+  round-trips losslessly, so this is exact by construction).
+- **`unit="char"`**: code-point offsets — **byte-identical to HuggingFace's
+  `return_offsets_mapping=True`** (CI-verified against `AutoTokenizer`). Exact for
+  non-NFC encodings; for NFC encodings (Qwen) offsets index the normalized text.
+
 ## Method reference
 
 A `Tokenizer` mirrors tiktoken's `Encoding` across the common surface.
@@ -79,6 +132,7 @@ A `Tokenizer` mirrors tiktoken's `Encoding` across the common surface.
 | `encode_to_numpy(text, ...)` | `uint32` array | fastest single-encode path (see above) |
 | `encode_batch(texts, threads=0, with_special=False)` | `(uint32 tokens, int64 offsets)` | parallel; doc i = `tokens[offsets[i]:offsets[i+1]]` |
 | `encode_single_token(text_or_bytes)` | `int` | the id for exactly these bytes |
+| `encode_with_offsets(text, *, unit="byte")` | `(list[int], list[(int,int)])` | ids + per-token spans; `unit="byte"` exact byte offsets, `unit="char"` == HF `offset_mapping` |
 | `count(text)` | `int` | tokens `encode` would produce |
 
 **Decode**

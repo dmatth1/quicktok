@@ -3,6 +3,35 @@
 All notable changes to quicktok. Format follows [Keep a Changelog](https://keepachangelog.com);
 versioning is [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- **Parity matrix** (README) + CI extension: every bundled encoding's byte-exact
+  status against *its own* reference is now spelled out and machine-checked —
+  o200k_harmony added to the tiktoken parity suite (skips where a tiktoken version
+  lacks it), qwen3 byte-exact vs `transformers` in the new transformers CI lane,
+  and a "token ids: byte-exact" badge. llama3 is honestly footnoted (exact vs
+  Meta's rank tokenizer; ~99.9998% vs HF merge-list inference).
+- **Per-token offsets** (`encode_with_offsets(text)` -> `(ids, spans)`): each
+  `spans[i]` is the `(start, end)` range of the input that token `i` covers — for
+  NER, span highlighting, streaming detokenization, training alignment.
+  `unit="byte"` (default) gives exact, gap-free UTF-8 byte offsets that tile the
+  input (each span is precisely the token's bytes); `unit="char"` gives code-point
+  offsets that are **byte-identical to HuggingFace's `return_offsets_mapping=True`**
+  (CI-verified against `AutoTokenizer`). Closes the main HF-migrant API gap; no
+  encode hot-path change (offsets derive from the lossless round-trip invariant).
+- **HuggingFace `AutoTokenizer` drop-in** (`quicktok.patch_transformers()`):
+  monkey-patches `transformers.AutoTokenizer.from_pretrained` so it returns a
+  quicktok-backed tokenizer for models whose grammar quicktok supports, and the
+  unmodified HF tokenizer otherwise — one call, existing code unchanged.
+  Exactness-preserving: only fast-paths a call whose output it can reproduce
+  byte-for-byte (plain `str`, no per-call options it doesn't model, special
+  tokens only as a verified static prefix/suffix); everything else delegates to
+  the real HF tokenizer. `unpatch_transformers()` restores the original;
+  `wrap_pretrained(hf, enc)` wraps a constructed tokenizer directly. The HF
+  ecosystem (transformers/datasets, vLLM/SGLang/TGI preprocessing) reaches a
+  tokenizer through `AutoTokenizer`, not tiktoken — this is the transparent swap.
+
 ## [0.4.0]
 
 ### Changed

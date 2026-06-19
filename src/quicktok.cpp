@@ -422,6 +422,20 @@ std::vector<uint32_t> Tokenizer::encode(std::string_view text) const {
     return out;
 }
 
+void Tokenizer::encode_with_offsets(const uint8_t* t, size_t len,
+                                    std::vector<uint32_t>& ids,
+                                    std::vector<uint32_t>& bounds) const {
+    size_t start = ids.size();
+    encode(t, len, ids);                       // exact ordinary ids (NFC + id_offset handled)
+    bounds.push_back(0);
+    uint32_t off = 0;
+    for (size_t i = start; i < ids.size(); i++) {
+        uint32_t id = ids[i] - (uint32_t)impl->id_offset;   // base rank -> tlen[]
+        off += impl->V.token_len(id);
+        bounds.push_back(off);
+    }
+}
+
 std::vector<uint32_t> Tokenizer::encode_with_special(std::string_view text) const {
     std::vector<uint32_t> out;
     out.reserve(text.size() / 3 + 8);

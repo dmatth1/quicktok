@@ -31,6 +31,34 @@ public:
         py::gil_scoped_release rel;
         return tok.encode_with_special(std::string_view(s));
     }
+    // ordinary encode + per-token spans. unit="byte" (exact UTF-8 byte offsets,
+    // tile the input) or "char" (code-point offsets, HF offset_mapping shape).
+    py::tuple encode_with_offsets(const std::string& text, const std::string& unit) const {
+        if (unit != "byte" && unit != "char")
+            throw py::value_error("unit must be 'byte' or 'char'");
+        std::vector<uint32_t> ids, bounds;
+        {
+            py::gil_scoped_release rel;
+            tok.encode_with_offsets((const uint8_t*)text.data(), text.size(), ids, bounds);
+        }
+        py::list spans;
+        if (unit == "byte") {
+            for (size_t i = 0; i + 1 < bounds.size(); i++)
+                spans.append(py::make_tuple(bounds[i], bounds[i + 1]));
+        } else {
+            // code-point index of each byte position (count of UTF-8 lead bytes).
+            // Exact for non-NFC encodings, where the encoded bytes == input bytes.
+            size_t n = text.size();
+            std::vector<uint32_t> b2c(n + 1);
+            uint32_t c = 0;
+            for (size_t i = 0; i < n; i++) { b2c[i] = c; if (((uint8_t)text[i] & 0xC0) != 0x80) c++; }
+            b2c[n] = c;
+            for (size_t i = 0; i + 1 < bounds.size(); i++)
+                spans.append(py::make_tuple(bounds[i] <= n ? b2c[bounds[i]] : c,
+                                            bounds[i + 1] <= n ? b2c[bounds[i + 1]] : c));
+        }
+        return py::make_tuple(ids, spans);
+    }
     // tiktoken's Encoding.encode(text, *, allowed_special=set(), disallowed_special="all"):
     // raise if a disallowed special string occurs; otherwise encode, turning the
     // allowed specials into their ids and everything else into ordinary tokens.
@@ -228,6 +256,12 @@ PYBIND11_MODULE(_quicktok, m) {
              "(== encode(text, allowed_special=\"all\")).")
         .def("encode_with_special_tokens", &PyTokenizer::encode_with_special, py::arg("text"),
              "Alias of encode_with_special() — the name tiktoken-rs / TokenDagger use.")
+        .def("encode_with_offsets", &PyTokenizer::encode_with_offsets, py::arg("text"),
+             py::kw_only(), py::arg("unit") = "byte",
+             "Ordinary encode -> (ids, spans). spans[i] = (start, end) for token i. "
+             "unit='byte' (default): exact UTF-8 byte offsets that tile the input. "
+             "unit='char': code-point offsets (HuggingFace offset_mapping shape; "
+             "exact for non-NFC encodings).")
         .def("encode_single_token", &PyTokenizer::encode_single_token, py::arg("text_or_bytes"),
              "Id of a piece that is exactly one token (str or bytes); KeyError otherwise.")
         .def("is_special_token", &PyTokenizer::is_special_token, py::arg("id"),
