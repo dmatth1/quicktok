@@ -28,7 +28,7 @@ xychart-beta
     title "cl100k_base · The Pile · MB/s (single thread, M1)"
     x-axis ["quicktok", "quicktok-py", "bpe-openai", "tiktoken-rs", "tiktoken", "TokenDagger"]
     y-axis "MB/s" 0 --> 100
-    bar [92.8, 64.3, 29.8, 13.6, 12.6, 9.7]
+    bar [92.8, 92.5, 29.8, 13.6, 12.6, 9.7]
 ```
 
 **cl100k_base** (GPT-3.5 / GPT-4), MB/s across three 25 MB corpora:
@@ -36,7 +36,7 @@ xychart-beta
 | encoder | The Pile | Code | Common Crawl |
 |---|---:|---:|---:|
 | **quicktok (native)** | **92.8** | **114.9** | **55.6** |
-| quicktok (Python) | 64.3 | 75.9 | 41.6 |
+| quicktok (Python, numpy) | 92.5 | 109.5 | 54.9 |
 | bpe-openai | 29.8 | 34.1 | 24.0 |
 | tiktoken-rs | 13.6 | 12.9 | 11.9 |
 | tiktoken (Python) | 12.6 | 11.8 | 10.9 |
