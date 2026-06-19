@@ -75,6 +75,7 @@ enc = quicktok.get_encoding("cl100k_base")
 ids = enc.encode("hello world")          # raises on a stray special, like tiktoken
 text = enc.decode(ids)
 
+arr = enc.encode_to_numpy(big_text)      # uint32 array, fastest single-encode path
 tokens, offsets = enc.encode_batch(docs) # parallel; flat uint32 + int64 offsets
 ```
 
