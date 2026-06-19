@@ -10,12 +10,17 @@ transformers-gated integration test exercises the real AutoTokenizer patch.
 """
 import pytest
 import quicktok
+from conftest import SAMPLES
 from quicktok.hf import (
     QuicktokBackedTokenizer,
     wrap_pretrained,
     patch_transformers,
     unpatch_transformers,
 )
+
+# Open (Apache-2.0), small, qwen-grammar model — quicktok backs it; used for the
+# real end-to-end exactness check against transformers.AutoTokenizer.
+INTEGRATION_MODEL = "Qwen/Qwen2.5-0.5B"
 
 
 @pytest.fixture(scope="module")
@@ -125,3 +130,25 @@ def test_patch_and_unpatch_swap_from_pretrained():
     finally:
         unpatch_transformers()
     assert not _is_patched(transformers)
+
+
+def test_integration_autotokenizer_byte_exact():
+    """End-to-end through the real transformers.AutoTokenizer: a patched
+    from_pretrained must produce byte-identical ids to the unmodified HF
+    tokenizer. Network-gated (downloads the model's tokenizer); skips offline."""
+    transformers = pytest.importorskip("transformers")
+    try:
+        ref = transformers.AutoTokenizer.from_pretrained(INTEGRATION_MODEL)  # unpatched reference
+    except Exception as e:  # offline / hub error -> not a quicktok failure
+        pytest.skip(f"could not fetch {INTEGRATION_MODEL}: {type(e).__name__}: {e}")
+
+    patch_transformers()
+    try:
+        fast = transformers.AutoTokenizer.from_pretrained(INTEGRATION_MODEL)
+        assert isinstance(fast, QuicktokBackedTokenizer)            # quicktok actually backs it
+        for s in SAMPLES:
+            assert fast.encode(s, add_special_tokens=False) == ref.encode(s, add_special_tokens=False), s
+            assert fast.encode(s) == ref.encode(s), s              # default (specials) path too
+        assert list(fast("hi there")["input_ids"]) == list(ref("hi there")["input_ids"])
+    finally:
+        unpatch_transformers()
